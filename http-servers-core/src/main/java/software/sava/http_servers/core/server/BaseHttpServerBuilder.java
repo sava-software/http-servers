@@ -57,17 +57,17 @@ public abstract class BaseHttpServerBuilder<H, RS> implements HttpServerBuilder 
   }
 
   @Override
-  public void queryCachedHandler(final String path, final CachedResponse handler) {
+  public void cachedQueryHandler(final String path, final CachedResponse handler) {
     addQueryHandler(path, cachedResponse(handler));
   }
 
   @Override
-  public void queryNonBlockingHandler(final String path, final QueryHandler handler) {
+  public void nonBlockingQueryHandler(final String path, final QueryHandler handler) {
     addQueryHandler(path, nonBlockingGet(handler));
   }
 
   @Override
-  public void queryBlockingHandler(final String path, final QueryHandler handler) {
+  public void blockingQueryHandler(final String path, final QueryHandler handler) {
     addQueryHandler(path, blockingGet(handler));
   }
 
@@ -79,17 +79,17 @@ public abstract class BaseHttpServerBuilder<H, RS> implements HttpServerBuilder 
   }
 
   @Override
-  public void pathCachedHandler(final String path, final CachedResponse handler) {
+  public void cachedPathHandler(final String path, final CachedResponse handler) {
     addPathHandler(path, cachedResponse(handler));
   }
 
   @Override
-  public void pathNonBlockingHandler(final String path, final QueryHandler handler) {
+  public void nonBlockingPathHandler(final String path, final QueryHandler handler) {
     addPathHandler(path, nonBlockingGet(handler));
   }
 
   @Override
-  public void pathBlockingHandler(final String path, final QueryHandler handler) {
+  public void blockingPathHandler(final String path, final QueryHandler handler) {
     addPathHandler(path, blockingGet(handler));
   }
 

@@ -17,4 +17,6 @@ module software.sava.http_servers.jetty {
   requires transitive org.eclipse.jetty.util;
 
   provides HttpServerBuilderFactory with JettyServerBuilderFactory;
+
+  exports software.sava.http_servers.jetty;
 }

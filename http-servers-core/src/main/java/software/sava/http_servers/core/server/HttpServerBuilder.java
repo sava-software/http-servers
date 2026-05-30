@@ -12,17 +12,29 @@ public interface HttpServerBuilder {
   <HG> HandlerWiring<HG> wireHandlers(final Map<HG, Set<String>> includeHandlersMap,
                                       final Map<HG, Set<String>> excludeHandlersMap);
 
+  default <HG> HandlerWiring<HG> wireIncludedHandlers(final Map<HG, Set<String>> includeHandlersMap) {
+    return wireHandlers(includeHandlersMap, null);
+  }
+
+  default <HG> HandlerWiring<HG> wireNonExcludedHandlers(final Map<HG, Set<String>> excludeHandlersMap) {
+    return wireHandlers(null, excludeHandlersMap);
+  }
+
+  default <HG> HandlerWiring<HG> wireHandlers() {
+    return wireHandlers(null, null);
+  }
+
   HttpServer createServer(final Executor executor, final String host, final int port);
 
-  void queryCachedHandler(final String path, final CachedResponse handler);
+  void cachedQueryHandler(final String path, final CachedResponse handler);
 
-  void queryNonBlockingHandler(final String path, final QueryHandler handler);
+  void nonBlockingQueryHandler(final String path, final QueryHandler handler);
 
-  void queryBlockingHandler(final String path, final QueryHandler handler);
+  void blockingQueryHandler(final String path, final QueryHandler handler);
 
-  void pathCachedHandler(final String path, final CachedResponse handler);
+  void cachedPathHandler(final String path, final CachedResponse handler);
 
-  void pathNonBlockingHandler(final String path, final QueryHandler handler);
+  void nonBlockingPathHandler(final String path, final QueryHandler handler);
 
-  void pathBlockingHandler(final String path, final QueryHandler handler);
+  void blockingPathHandler(final String path, final QueryHandler handler);
 }

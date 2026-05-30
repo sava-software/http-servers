@@ -22,6 +22,11 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
+  public HttpServerBuilder serverBuilder() {
+    return serverBuilder;
+  }
+
+  @Override
   public Set<String> excludeHandlers(final HG handlerGroup) {
     return excludeHandlersMap.get(handlerGroup);
   }
@@ -44,31 +49,31 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
 
   @Override
   public void queryCachedResponse(final String path, final CachedResponse cachedResponse) {
-    serverBuilder.queryCachedHandler(path, cachedResponse);
+    serverBuilder.cachedQueryHandler(path, cachedResponse);
   }
 
   @Override
   public void queryNonBlockingGet(final String path, final QueryHandler nonBlockingGetHandler) {
-    serverBuilder.queryNonBlockingHandler(path, nonBlockingGetHandler);
+    serverBuilder.nonBlockingQueryHandler(path, nonBlockingGetHandler);
   }
 
   @Override
   public void queryBlockingGet(final String path, final QueryHandler blockingGetHandler) {
-    serverBuilder.queryBlockingHandler(path, blockingGetHandler);
+    serverBuilder.blockingQueryHandler(path, blockingGetHandler);
   }
 
   @Override
   public void pathCachedResponse(final String path, final CachedResponse cachedResponse) {
-    serverBuilder.pathCachedHandler(path, cachedResponse);
+    serverBuilder.cachedPathHandler(path, cachedResponse);
   }
 
   @Override
   public void pathNonBlockingGet(final String path, final QueryHandler nonBlockingGetHandler) {
-    serverBuilder.pathNonBlockingHandler(path, nonBlockingGetHandler);
+    serverBuilder.nonBlockingPathHandler(path, nonBlockingGetHandler);
   }
 
   @Override
   public void pathBlockingGet(final String path, final QueryHandler blockingGetHandler) {
-    serverBuilder.pathBlockingHandler(path, blockingGetHandler);
+    serverBuilder.blockingPathHandler(path, blockingGetHandler);
   }
 }

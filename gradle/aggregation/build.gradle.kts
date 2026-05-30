@@ -7,16 +7,18 @@ val idlClientModules = setOf(
   "fusionauth",
   "jdk",
   "jetty",
+  "sava"
 )
 
-//dependencies {
-//  for (module in idlClientModules) {
-//    nmcpAggregation(project(":http-servers-$module"))
-//  }
-//}
-//
-//tasks.register("publishToGitHubPackages") {
-//  group = "publishing"
-//  val publishTasks = idlClientModules.map { ":http-servers-$it:publishMavenJavaPublicationToSavaGithubPackagesRepository" }
-//  dependsOn(publishTasks)
-//}
+dependencies {
+  for (module in idlClientModules) {
+    nmcpAggregation(project(":http-servers-$module"))
+  }
+}
+
+tasks.register("publishToGitHubPackages") {
+  group = "publishing"
+  val publishTasks =
+    idlClientModules.map { ":http-servers-$it:publishMavenJavaPublicationToSavaGithubPackagesRepository" }
+  dependsOn(publishTasks)
+}

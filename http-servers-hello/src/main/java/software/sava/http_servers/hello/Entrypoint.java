@@ -13,15 +13,14 @@ public final class Entrypoint {
     final var factoryName = args.length == 0
         ? "FusionAuthBuilderFactory"
         : args[0];
+
     final var factory = ServiceLoader.load(HttpServerBuilderFactory.class)
         .stream()
         .filter(provider -> provider.type().getSimpleName().equals(factoryName))
         .findFirst()
         .orElseThrow(() -> new IllegalStateException("No HttpServerBuilderFactory found matching: " + factoryName))
         .get();
-
     final var serverBuilder = factory.createBuilder();
-
     final var handlerWiring = serverBuilder.wireHandlers(
         null,
         null
@@ -29,7 +28,7 @@ public final class Entrypoint {
 
     if (handlerWiring.includeGroup(HelloHandlerGroup.HELLO)) {
       if (handlerWiring.includePath(HelloHandlerGroup.HELLO, HELLO_PATH)) {
-        serverBuilder.queryNonBlockingHandler(HELLO_PATH, new HelloHandler());
+        serverBuilder.nonBlockingQueryHandler(HELLO_PATH, new HelloHandler());
       }
     }
 

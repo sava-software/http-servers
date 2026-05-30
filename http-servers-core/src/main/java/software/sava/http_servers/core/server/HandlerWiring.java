@@ -7,6 +7,8 @@ import java.util.Set;
 
 public interface HandlerWiring<HG> {
 
+  HttpServerBuilder serverBuilder();
+
   Set<String> excludeHandlers(final HG handlerGroup);
 
   boolean includeGroup(final HG handlerGroup);
