@@ -1,7 +1,6 @@
 rootProject.name = "http-servers"
 
 pluginManagement {
-  includeBuild("gradle/plugins")
   repositories {
     gradlePluginPortal()
     mavenCentral()
@@ -22,7 +21,7 @@ pluginManagement {
         }
       }
     }
-//    includeBuild("../sava-build")
+    // includeBuild("../sava-build")
   }
 }
 
