@@ -15,17 +15,27 @@ public interface HandlerWiring<HG> {
 
   boolean excludePath(final HG handlerGroup, final String path);
 
+  void queryCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse);
+
   void queryCachedResponse(final String path, final CachedResponse cachedResponse);
 
-  void queryNonBlockingGet(final String path,
-                           final QueryHandler nonBlockingGetHandler);
+  void queryNonBlockingGet(final HG handlerGroup, final String path, final QueryHandler nonBlockingGetHandler);
+
+  void queryNonBlockingGet(final String path, final QueryHandler nonBlockingGetHandler);
+
+  void queryBlockingGet(final HG handlerGroup, final String path, final QueryHandler blockingGetHandler);
 
   void queryBlockingGet(final String path, final QueryHandler blockingGetHandler);
 
+  void pathCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse);
+
   void pathCachedResponse(final String path, final CachedResponse cachedResponse);
 
-  void pathNonBlockingGet(final String path,
-                          final QueryHandler nonBlockingGetHandler);
+  void pathNonBlockingGet(final HG handlerGroup, final String path, final QueryHandler nonBlockingGetHandler);
+
+  void pathNonBlockingGet(final String path, final QueryHandler nonBlockingGetHandler);
+
+  void pathBlockingGet(final HG handlerGroup, final String path, final QueryHandler blockingGetHandler);
 
   void pathBlockingGet(final String path, final QueryHandler blockingGetHandler);
 }

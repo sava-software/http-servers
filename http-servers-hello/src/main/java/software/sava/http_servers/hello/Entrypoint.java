@@ -28,13 +28,11 @@ public final class Entrypoint {
         Map.of(HelloHandlerGroup.HELLO, Set.of(EXCLUDE_PATH))
     );
 
+    final var helloHandler = new HelloHandler();
     if (handlerWiring.includePath(HelloHandlerGroup.HELLO, HELLO_PATH)) {
-      serverBuilder.nonBlockingQueryHandler(HELLO_PATH, new HelloHandler());
+      serverBuilder.nonBlockingQueryHandler(HELLO_PATH, helloHandler);
     }
-
-    if (handlerWiring.includePath(HelloHandlerGroup.HELLO, EXCLUDE_PATH)) {
-      serverBuilder.nonBlockingQueryHandler(EXCLUDE_PATH, new HelloHandler());
-    }
+    handlerWiring.queryNonBlockingGet(HelloHandlerGroup.HELLO, EXCLUDE_PATH, helloHandler);
 
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       final var server = serverBuilder.createServer(executor, "localhost", 4242);

@@ -75,8 +75,22 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
+  public void queryCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.cachedQueryHandler(path, cachedResponse);
+    }
+  }
+
+  @Override
   public void queryCachedResponse(final String path, final CachedResponse cachedResponse) {
     serverBuilder.cachedQueryHandler(path, cachedResponse);
+  }
+
+  @Override
+  public void queryNonBlockingGet(final HG handlerGroup, final String path, final QueryHandler nonBlockingGetHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.nonBlockingQueryHandler(path, nonBlockingGetHandler);
+    }
   }
 
   @Override
@@ -85,8 +99,22 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
+  public void queryBlockingGet(final HG handlerGroup, final String path, final QueryHandler blockingGetHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.blockingQueryHandler(path, blockingGetHandler);
+    }
+  }
+
+  @Override
   public void queryBlockingGet(final String path, final QueryHandler blockingGetHandler) {
     serverBuilder.blockingQueryHandler(path, blockingGetHandler);
+  }
+
+  @Override
+  public void pathCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.cachedPathHandler(path, cachedResponse);
+    }
   }
 
   @Override
@@ -95,8 +123,22 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
+  public void pathNonBlockingGet(final HG handlerGroup, final String path, final QueryHandler nonBlockingGetHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.nonBlockingPathHandler(path, nonBlockingGetHandler);
+    }
+  }
+
+  @Override
   public void pathNonBlockingGet(final String path, final QueryHandler nonBlockingGetHandler) {
     serverBuilder.nonBlockingPathHandler(path, nonBlockingGetHandler);
+  }
+
+  @Override
+  public void pathBlockingGet(final HG handlerGroup, final String path, final QueryHandler blockingGetHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.blockingPathHandler(path, blockingGetHandler);
+    }
   }
 
   @Override
