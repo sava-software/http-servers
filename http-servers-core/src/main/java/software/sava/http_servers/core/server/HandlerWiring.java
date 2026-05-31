@@ -3,23 +3,17 @@ package software.sava.http_servers.core.server;
 import software.sava.http_servers.core.response.CachedResponse;
 import software.sava.http_servers.core.response.QueryHandler;
 
-import java.util.Set;
-
 public interface HandlerWiring<HG> {
 
   HttpServerBuilder serverBuilder();
 
-  Set<String> excludeHandlers(final HG handlerGroup);
-
   boolean includeGroup(final HG handlerGroup);
 
-  boolean includePath(final String path, final Set<String> exclusions);
+  boolean includePath(final HG handlerGroup, final String path);
 
-  default boolean includePath(final HG handlerGroup, final String path) {
-    return includePath(path, excludeHandlers(handlerGroup));
-  }
+  boolean excludeGroup(final HG handlerGroup);
 
-  boolean includePath(final String path, final HG handlerGroup);
+  boolean excludePath(final HG handlerGroup, final String path);
 
   void queryCachedResponse(final String path, final CachedResponse cachedResponse);
 

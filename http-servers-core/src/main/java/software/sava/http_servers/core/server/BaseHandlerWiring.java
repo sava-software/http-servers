@@ -27,24 +27,51 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
-  public Set<String> excludeHandlers(final HG handlerGroup) {
-    return excludeHandlersMap.get(handlerGroup);
-  }
-
-  @Override
   public boolean includeGroup(final HG handlerGroup) {
+    final var inclusions = includeHandlersMap.get(handlerGroup);
+    if (inclusions != null && !inclusions.isEmpty()) {
+      return true;
+    }
     final var exclusions = excludeHandlersMap.get(handlerGroup);
     return exclusions == null || !exclusions.isEmpty();
   }
 
   @Override
-  public boolean includePath(final String path, final Set<String> exclusions) {
-    return exclusions == null || !exclusions.contains(path);
+  public boolean includePath(final HG handlerGroup, final String path) {
+    if (includeGroup(handlerGroup)) {
+      final var exclusions = excludeHandlersMap.get(handlerGroup);
+      if (exclusions != null && exclusions.contains(path)) {
+        return false;
+      }
+      final var inclusions = includeHandlersMap.get(handlerGroup);
+      return inclusions == null || inclusions.contains(path);
+    } else {
+      return false;
+    }
   }
 
   @Override
-  public boolean includePath(final String path, final HG handlerGroup) {
-    return includePath(path, excludeHandlersMap.get(handlerGroup));
+  public boolean excludeGroup(final HG handlerGroup) {
+    final var inclusions = includeHandlersMap.get(handlerGroup);
+    if (inclusions != null && inclusions.isEmpty()) {
+      return true;
+    }
+    final var exclusions = excludeHandlersMap.get(handlerGroup);
+    return exclusions != null && exclusions.isEmpty();
+  }
+
+  @Override
+  public boolean excludePath(final HG handlerGroup, final String path) {
+    if (includeGroup(handlerGroup)) {
+      final var exclusions = excludeHandlersMap.get(handlerGroup);
+      if (exclusions != null && exclusions.contains(path)) {
+        return true;
+      }
+      final var inclusions = includeHandlersMap.get(handlerGroup);
+      return inclusions == null || !inclusions.contains(path);
+    } else {
+      return true;
+    }
   }
 
   @Override

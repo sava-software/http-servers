@@ -2,16 +2,19 @@ package software.sava.http_servers.hello;
 
 import software.sava.http_servers.core.server.HttpServerBuilderFactory;
 
+import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.concurrent.Executors;
 
 public final class Entrypoint {
 
   private static final String HELLO_PATH = "/hello";
+  private static final String EXCLUDE_PATH = "/exclude";
 
   static void main(final String[] args) throws Exception {
     final var factoryName = args.length == 0
-        ? "FusionAuthBuilderFactory"
+        ? "JettyServerBuilderFactory"
         : args[0];
 
     final var factory = ServiceLoader.load(HttpServerBuilderFactory.class)
@@ -21,15 +24,16 @@ public final class Entrypoint {
         .orElseThrow(() -> new IllegalStateException("No HttpServerBuilderFactory found matching: " + factoryName))
         .get();
     final var serverBuilder = factory.createBuilder();
-    final var handlerWiring = serverBuilder.wireHandlers(
-        null,
-        null
+    final var handlerWiring = serverBuilder.wireNonExcludedHandlers(
+        Map.of(HelloHandlerGroup.HELLO, Set.of(EXCLUDE_PATH))
     );
 
-    if (handlerWiring.includeGroup(HelloHandlerGroup.HELLO)) {
-      if (handlerWiring.includePath(HelloHandlerGroup.HELLO, HELLO_PATH)) {
-        serverBuilder.nonBlockingQueryHandler(HELLO_PATH, new HelloHandler());
-      }
+    if (handlerWiring.includePath(HelloHandlerGroup.HELLO, HELLO_PATH)) {
+      serverBuilder.nonBlockingQueryHandler(HELLO_PATH, new HelloHandler());
+    }
+
+    if (handlerWiring.includePath(HelloHandlerGroup.HELLO, EXCLUDE_PATH)) {
+      serverBuilder.nonBlockingQueryHandler(EXCLUDE_PATH, new HelloHandler());
     }
 
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
