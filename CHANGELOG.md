@@ -1,5 +1,13 @@
 # Changelog
 
+## [25.0.2](https://github.com/sava-software/http-servers/compare/25.0.1...25.0.2) (2026-05-31)
+
+
+### Features
+
+* **http-servers-core:** add handler group support for query/path methods ([aac0c87](https://github.com/sava-software/http-servers/commit/aac0c8758f07f28b35f47945e6c2d7880df0c6f5))
+* **http-servers-core:** enhance handler inclusion/exclusion logic ([deeafe2](https://github.com/sava-software/http-servers/commit/deeafe29adbcf994c7d56480b7ba68f30a3bb770))
+
 ## [25.0.1](https://github.com/sava-software/http-servers/compare/25.0.0...25.0.1) (2026-05-30)
 
 
