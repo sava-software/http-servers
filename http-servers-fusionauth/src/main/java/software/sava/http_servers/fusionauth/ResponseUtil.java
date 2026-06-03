@@ -45,6 +45,9 @@ final class ResponseUtil {
   }
 
   static void writeResponse(final HTTPResponse response, final HttpResponse httpResponse) throws IOException {
+    for (final var header : httpResponse.headers().entrySet()) {
+      response.setHeader(header.getKey(), header.getValue());
+    }
     writeResponse(httpResponse.statusCode(), httpResponse.contentType(), response, httpResponse.body());
   }
 

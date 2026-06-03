@@ -17,7 +17,7 @@ final class FusionAuthQueryHandler implements HTTPHandler {
 
   @Override
   public void handle(final HTTPRequest request, final HTTPResponse response) throws Exception {
-    final var httpResponse = queryHandler.httpResponse(request.getPath(), request.getQueryString());
+    final var httpResponse = queryHandler.httpResponse(new FusionAuthRequest(request));
     writeResponse(response, httpResponse);
   }
 }

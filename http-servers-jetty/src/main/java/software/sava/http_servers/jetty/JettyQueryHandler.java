@@ -47,12 +47,14 @@ final class JettyQueryHandler extends BaseJettyHandler {
   public boolean handle(final Request request, final Response response, final Callback callback) {
     super.handle(request, response, callback);
 
-    final var httpUri = request.getHttpURI();
-    final var httpResponse = queryHandler.httpResponse(httpUri.getPath(), httpUri.getQuery());
+    final var httpResponse = queryHandler.httpResponse(new JettyRequest(request));
 
     final var responseHeaders = response.getHeaders();
 
     responseHeaders.put(new HttpField(HttpHeader.CONTENT_TYPE, httpResponse.contentType()));
+    for (final var header : httpResponse.headers().entrySet()) {
+      responseHeaders.put(header.getKey(), header.getValue());
+    }
 
     response.setStatus(httpResponse.statusCode());
     response.write(true, ByteBuffer.wrap(httpResponse.body()), callback);

@@ -5,15 +5,12 @@ pluginManagement {
     gradlePluginPortal()
     mavenCentral()
     val gprUser = providers.gradleProperty("savaGithubPackagesUsername")
-      .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_savaGithubPackagesUsername"))
-      .orElse(providers.environmentVariable("GITHUB_ACTOR"))
-      .orNull
+      .orNull?.takeIf { it.isNotBlank() }
     val gprToken = providers.gradleProperty("savaGithubPackagesPassword")
-      .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_savaGithubPackagesPassword"))
-      .orElse(providers.environmentVariable("GITHUB_TOKEN"))
-      .orNull
-    if (!gprUser.isNullOrBlank() && !gprToken.isNullOrBlank()) {
+      .orNull?.takeIf { it.isNotBlank() }
+    if (gprUser != null && gprToken != null) {
       maven {
+        name = "savaGithubPackages"
         url = uri("https://maven.pkg.github.com/sava-software/sava-build")
         credentials {
           username = gprUser
@@ -26,7 +23,7 @@ pluginManagement {
 }
 
 plugins {
-  id("software.sava.build") version "21.3.13"
+  id("software.sava.build") version "21.3.15"
 }
 
 apply(plugin = "software.sava.build.feature-jdk-provisioning")

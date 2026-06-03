@@ -65,3 +65,4 @@ replay_pid*
 *.local
 secrets/
 /.junie/
+/symlinks/

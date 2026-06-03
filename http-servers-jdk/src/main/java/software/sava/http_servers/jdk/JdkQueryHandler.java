@@ -44,11 +44,14 @@ final class JdkQueryHandler implements HttpHandler {
   }
 
   private void process(final HttpExchange exchange) throws IOException {
-    final var requestURI = exchange.getRequestURI();
-    final var httpResponse = queryHandler.httpResponse(requestURI.getPath(), requestURI.getQuery());
+    final var request = new JdkRequest(exchange);
+    final var httpResponse = queryHandler.httpResponse(request);
 
     final var headers = exchange.getResponseHeaders();
     headers.set("Content-Type", httpResponse.contentType());
+    for (final var header : httpResponse.headers().entrySet()) {
+      headers.set(header.getKey(), header.getValue());
+    }
 
     final var body = httpResponse.body();
     exchange.sendResponseHeaders(httpResponse.statusCode(), body.length);

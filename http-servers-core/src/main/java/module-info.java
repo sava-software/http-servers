@@ -1,6 +1,7 @@
 import software.sava.http_servers.core.server.HttpServerBuilderFactory;
 
 module software.sava.http_servers.core {
+  exports software.sava.http_servers.core.request;
   exports software.sava.http_servers.core.response;
   exports software.sava.http_servers.core.handlers;
   exports software.sava.http_servers.core.server;
