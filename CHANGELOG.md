@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.0.5](https://github.com/sava-software/http-servers/compare/25.0.4...25.0.5) (2026-06-03)
+
+
+### Bug Fixes
+
+* **aggregation:** correct task name in GitHub Packages publishing script ([da09fde](https://github.com/sava-software/http-servers/commit/da09fde7567c58c86df21b44a25d706084dcb072))
+
 ## [25.0.4](https://github.com/sava-software/http-servers/compare/25.0.3...25.0.4) (2026-06-03)
 
 
