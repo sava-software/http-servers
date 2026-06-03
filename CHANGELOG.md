@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.0.4](https://github.com/sava-software/http-servers/compare/25.0.3...25.0.4) (2026-06-03)
+
+
+### Miscellaneous Chores
+
+* release 25.0.4 ([a401152](https://github.com/sava-software/http-servers/commit/a401152e8feb23c99c948c1f065a4d768d5b6742))
+
 ## [25.0.3](https://github.com/sava-software/http-servers/compare/25.0.2...25.0.3) (2026-06-03)
 
 
