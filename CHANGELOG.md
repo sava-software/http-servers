@@ -1,5 +1,13 @@
 # Changelog
 
+## [25.0.3](https://github.com/sava-software/http-servers/compare/25.0.2...25.0.3) (2026-06-03)
+
+
+### Features
+
+* **http-servers-core:** add unified request abstraction and headers to response ([530a293](https://github.com/sava-software/http-servers/commit/530a2937493c473546d11a0d2c7bb4eaa814d366))
+* **http-servers-sava:** implement x402 Solana settlement and payment models ([3703a7c](https://github.com/sava-software/http-servers/commit/3703a7c51c61706429b322fe3314f9f91127d763))
+
 ## [25.0.2](https://github.com/sava-software/http-servers/compare/25.0.1...25.0.2) (2026-05-31)
 
 
