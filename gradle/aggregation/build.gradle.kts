@@ -19,6 +19,6 @@ dependencies {
 tasks.register("publishToGitHubPackages") {
   group = "publishing"
   val publishTasks =
-    idlClientModules.map { ":http-servers-$it:publishMavenJavaPublicationToSavaGithubPackagesRepository" }
+    idlClientModules.map { ":http-servers-$it:publishMavenJavaPublicationToSavaGithubPackagesPublishRepository" }
   dependsOn(publishTasks)
 }
