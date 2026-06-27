@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.1.1](https://github.com/sava-software/http-servers/compare/25.1.0...25.1.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **ci:** update permissions in GitHub publish workflow ([9139b11](https://github.com/sava-software/http-servers/commit/9139b117b2741a1c9d6d35c1272a20c00551ad2f))
+
 ## [25.1.0](https://github.com/sava-software/http-servers/compare/25.0.5...25.1.0) (2026-06-27)
 
 
