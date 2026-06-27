@@ -2,6 +2,8 @@ package software.sava.http_servers.core.request;
 
 public interface Request {
 
+  String method();
+
   String path();
 
   String query();

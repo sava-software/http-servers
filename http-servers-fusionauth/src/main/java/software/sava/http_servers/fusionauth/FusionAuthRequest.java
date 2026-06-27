@@ -12,6 +12,11 @@ final class FusionAuthRequest implements Request {
   }
 
   @Override
+  public String method() {
+    return String.valueOf(request.getMethod());
+  }
+
+  @Override
   public String path() {
     return request.getPath();
   }

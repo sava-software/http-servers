@@ -59,4 +59,14 @@ public class FusionAuthServerBuilder extends BaseHttpServerBuilder<HTTPHandler, 
   protected HTTPHandler blockingGet(final QueryHandler blockingGetHandler) {
     return new FusionAuthQueryHandler(blockingGetHandler);
   }
+
+  @Override
+  protected HTTPHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
+    return new FusionAuthQueryHandler(nonBlockingPostHandler);
+  }
+
+  @Override
+  protected HTTPHandler blockingPost(final QueryHandler blockingPostHandler) {
+    return new FusionAuthQueryHandler(blockingPostHandler);
+  }
 }

@@ -15,6 +15,11 @@ final class JettyRequest implements Request {
   }
 
   @Override
+  public String method() {
+    return request.getMethod();
+  }
+
+  @Override
   public String path() {
     return request.getHttpURI().getPath();
   }

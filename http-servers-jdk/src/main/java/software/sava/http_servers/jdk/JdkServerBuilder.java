@@ -66,8 +66,18 @@ public class JdkServerBuilder extends BaseHttpServerBuilder<HttpHandler, HttpSer
   }
 
   @Override
+  protected HttpHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
+    return JdkQueryHandler.createNonBlockingPostHandler(taskExecutor, nonBlockingPostHandler);
+  }
+
+  @Override
+  protected HttpHandler blockingPost(final QueryHandler blockingPostHandler) {
+    return JdkQueryHandler.createBlockingPostHandler(blockingPostHandler);
+  }
+
+  @Override
   protected void setController(final HttpServer server, final HandlerMap<HttpHandler> handlerMap) {
-    handlerMap.queryHandlerStream().forEach(entry -> server.createContext(entry.getKey(), entry.getValue()));
-    handlerMap.pathHandlerStream().forEach(entry -> server.createContext(entry.getKey(), entry.getValue()));
+    handlerMap.queryHandlerStream().forEach(entry -> server.createContext(entry.getKey(), new JdkController(entry.getValue())));
+    handlerMap.pathHandlerStream().forEach(entry -> server.createContext(entry.getKey(), new JdkController(entry.getValue())));
   }
 }

@@ -67,13 +67,6 @@ public final class X402Gate implements QueryHandler {
   }
 
   @Override
-  public HttpResponse httpResponse(final String path, final String query) {
-    // The request headers are required to read the X-PAYMENT payload, so without them the only
-    // correct response is to ask the client for payment.
-    return paymentRequired("X-PAYMENT header is required");
-  }
-
-  @Override
   public HttpResponse httpResponse(final Request request) {
     final var header = request.header(X402.PAYMENT_HEADER);
     if (header == null || header.isBlank()) {

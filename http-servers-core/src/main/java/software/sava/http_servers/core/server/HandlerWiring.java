@@ -27,6 +27,14 @@ public interface HandlerWiring<HG> {
 
   void queryBlockingGet(final String path, final QueryHandler blockingGetHandler);
 
+  void queryNonBlockingPost(final HG handlerGroup, final String path, final QueryHandler nonBlockingPostHandler);
+
+  void queryNonBlockingPost(final String path, final QueryHandler nonBlockingPostHandler);
+
+  void queryBlockingPost(final HG handlerGroup, final String path, final QueryHandler blockingPostHandler);
+
+  void queryBlockingPost(final String path, final QueryHandler blockingPostHandler);
+
   void pathCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse);
 
   void pathCachedResponse(final String path, final CachedResponse cachedResponse);
@@ -38,4 +46,12 @@ public interface HandlerWiring<HG> {
   void pathBlockingGet(final HG handlerGroup, final String path, final QueryHandler blockingGetHandler);
 
   void pathBlockingGet(final String path, final QueryHandler blockingGetHandler);
+
+  void pathNonBlockingPost(final HG handlerGroup, final String path, final QueryHandler nonBlockingPostHandler);
+
+  void pathNonBlockingPost(final String path, final QueryHandler nonBlockingPostHandler);
+
+  void pathBlockingPost(final HG handlerGroup, final String path, final QueryHandler blockingPostHandler);
+
+  void pathBlockingPost(final String path, final QueryHandler blockingPostHandler);
 }

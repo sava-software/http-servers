@@ -15,6 +15,11 @@ final class JdkRequest implements Request {
   }
 
   @Override
+  public String method() {
+    return exchange.getRequestMethod();
+  }
+
+  @Override
   public String path() {
     return exchange.getRequestURI().getPath();
   }

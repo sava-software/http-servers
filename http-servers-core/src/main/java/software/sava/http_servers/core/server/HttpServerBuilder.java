@@ -32,9 +32,17 @@ public interface HttpServerBuilder {
 
   void blockingQueryHandler(final String path, final QueryHandler handler);
 
+  void nonBlockingQueryPost(final String path, final QueryHandler handler);
+
+  void blockingQueryPost(final String path, final QueryHandler handler);
+
   void cachedPathHandler(final String path, final CachedResponse handler);
 
   void nonBlockingPathHandler(final String path, final QueryHandler handler);
 
   void blockingPathHandler(final String path, final QueryHandler handler);
+
+  void nonBlockingPathPost(final String path, final QueryHandler handler);
+
+  void blockingPathPost(final String path, final QueryHandler handler);
 }

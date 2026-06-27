@@ -4,31 +4,37 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Stream;
 
-record HandlerMapImpl<H>(Map<String, H> queryHandlers,
-                         Collection<Map.Entry<String, H>> pathHandlers) implements HandlerMap<H> {
+record HandlerMapImpl<H>(Map<String, Map<String, H>> queryHandlers,
+                         Collection<Map.Entry<String, Map<String, H>>> pathHandlers) implements HandlerMap<H> {
 
   @Override
-  public H lookupHandler(final String path) {
-    final var handler = queryHandlers.get(path);
-    if (handler == null) {
+  public HandlerLookup<H> lookupHandler(final String method, final String path) {
+    var methodHandlers = queryHandlers.get(path);
+    if (methodHandlers == null) {
       for (final var entry : pathHandlers) {
         if (path.startsWith(entry.getKey())) {
-          return entry.getValue();
+          methodHandlers = entry.getValue();
+          break;
         }
       }
-      return null;
-    } else {
-      return handler;
+      if (methodHandlers == null) {
+        return HandlerLookup.notFound();
+      }
     }
+    final var handler = methodHandlers.get(method);
+    if (handler != null) {
+      return HandlerLookup.matched(handler);
+    }
+    return HandlerLookup.methodNotAllowed(String.join(", ", methodHandlers.keySet()));
   }
 
   @Override
-  public Stream<Map.Entry<String, H>> queryHandlerStream() {
+  public Stream<Map.Entry<String, Map<String, H>>> queryHandlerStream() {
     return queryHandlers.entrySet().stream();
   }
 
   @Override
-  public Stream<Map.Entry<String, H>> pathHandlerStream() {
+  public Stream<Map.Entry<String, Map<String, H>>> pathHandlerStream() {
     return pathHandlers.stream();
   }
 }

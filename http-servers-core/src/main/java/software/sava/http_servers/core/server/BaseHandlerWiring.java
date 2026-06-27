@@ -111,6 +111,30 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
+  public void queryNonBlockingPost(final HG handlerGroup, final String path, final QueryHandler nonBlockingPostHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.nonBlockingQueryPost(path, nonBlockingPostHandler);
+    }
+  }
+
+  @Override
+  public void queryNonBlockingPost(final String path, final QueryHandler nonBlockingPostHandler) {
+    serverBuilder.nonBlockingQueryPost(path, nonBlockingPostHandler);
+  }
+
+  @Override
+  public void queryBlockingPost(final HG handlerGroup, final String path, final QueryHandler blockingPostHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.blockingQueryPost(path, blockingPostHandler);
+    }
+  }
+
+  @Override
+  public void queryBlockingPost(final String path, final QueryHandler blockingPostHandler) {
+    serverBuilder.blockingQueryPost(path, blockingPostHandler);
+  }
+
+  @Override
   public void pathCachedResponse(final HG handlerGroup, final String path, final CachedResponse cachedResponse) {
     if (includePath(handlerGroup, path)) {
       serverBuilder.cachedPathHandler(path, cachedResponse);
@@ -144,5 +168,29 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   @Override
   public void pathBlockingGet(final String path, final QueryHandler blockingGetHandler) {
     serverBuilder.blockingPathHandler(path, blockingGetHandler);
+  }
+
+  @Override
+  public void pathNonBlockingPost(final HG handlerGroup, final String path, final QueryHandler nonBlockingPostHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.nonBlockingPathPost(path, nonBlockingPostHandler);
+    }
+  }
+
+  @Override
+  public void pathNonBlockingPost(final String path, final QueryHandler nonBlockingPostHandler) {
+    serverBuilder.nonBlockingPathPost(path, nonBlockingPostHandler);
+  }
+
+  @Override
+  public void pathBlockingPost(final HG handlerGroup, final String path, final QueryHandler blockingPostHandler) {
+    if (includePath(handlerGroup, path)) {
+      serverBuilder.blockingPathPost(path, blockingPostHandler);
+    }
+  }
+
+  @Override
+  public void pathBlockingPost(final String path, final QueryHandler blockingPostHandler) {
+    serverBuilder.blockingPathPost(path, blockingPostHandler);
   }
 }

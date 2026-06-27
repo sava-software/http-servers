@@ -9,17 +9,15 @@ import software.sava.http_servers.core.request.Request;
 import software.sava.http_servers.core.response.HttpResponse;
 import software.sava.http_servers.core.response.QueryHandler;
 import software.sava.idl.clients.spl.associated_token.gen.AssociatedTokenPDAs;
+import software.sava.idl.clients.spl.compute_budget.gen.ComputeBudgetProgram;
 import software.sava.idl.clients.spl.token.gen.TokenProgram;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static software.sava.core.encoding.ByteUtil.putInt32LE;
-import static software.sava.core.encoding.ByteUtil.putInt64LE;
 
 final class X402GateTest {
 
@@ -34,7 +32,7 @@ final class X402GateTest {
   private static final PublicKey MINT = key(4);
   private static final PublicKey PAY_TO = key(5);
 
-  private static final QueryHandler PROTECTED = (path, query) -> HttpResponse.json("{\"secret\":42}");
+  private static final QueryHandler PROTECTED = _ -> HttpResponse.json("{\"secret\":42}");
 
   private static PublicKey key(final int seed) {
     final byte[] b = new byte[PublicKey.PUBLIC_KEY_LENGTH];
@@ -48,17 +46,11 @@ final class X402GateTest {
   }
 
   private static Instruction computeLimit(final int units) {
-    final byte[] data = new byte[5];
-    data[0] = (byte) X402.COMPUTE_BUDGET_SET_LIMIT;
-    putInt32LE(data, 1, units);
-    return Instruction.createInstruction(ACCOUNTS.computeBudgetProgram(), List.of(), data);
+    return ComputeBudgetProgram.setComputeUnitLimit(ACCOUNTS.invokedComputeBudgetProgram(), units);
   }
 
   private static Instruction computePrice(final long microLamports) {
-    final byte[] data = new byte[9];
-    data[0] = (byte) X402.COMPUTE_BUDGET_SET_PRICE;
-    putInt64LE(data, 1, microLamports);
-    return Instruction.createInstruction(ACCOUNTS.computeBudgetProgram(), List.of(), data);
+    return ComputeBudgetProgram.setComputeUnitPrice(ACCOUNTS.invokedComputeBudgetProgram(), microLamports);
   }
 
   private static Instruction transfer() {
@@ -68,7 +60,8 @@ final class X402GateTest {
 
   private static PaymentRequirements requirements() {
     return new PaymentRequirements(
-        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, Long.toString(AMOUNT), MINT, PAY_TO, 60, FEE_PAYER, null);
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, Long.toString(AMOUNT), MINT, PAY_TO, 60, FEE_PAYER, null
+    );
   }
 
   private static String validPaymentHeader() {
@@ -77,8 +70,8 @@ final class X402GateTest {
     ixs.add(computePrice(1_000));
     ixs.add(transfer());
     final byte[] txBytes = Transaction.createTx(FEE_PAYER, ixs).serialized();
-    final String txB64 = Base64.getEncoder().encodeToString(txBytes);
-    final String json = "{\"x402Version\":2,\"payload\":{\"transaction\":\"" + txB64 + "\"}}";
+    final var txB64 = Base64.getEncoder().encodeToString(txBytes);
+    final var json = "{\"x402Version\":2,\"payload\":{\"transaction\":\"" + txB64 + "\"}}";
     return Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
   }
 
@@ -86,7 +79,11 @@ final class X402GateTest {
     return new X402Gate(PROTECTED, requirements(), null, new SvmExactVerifier(ACCOUNTS));
   }
 
-  private record FakeRequest(String path, String query, String paymentHeader) implements Request {
+  private record FakeRequest(String method, String path, String query, String paymentHeader) implements Request {
+
+    private FakeRequest(final String path, final String query, final String paymentHeader) {
+      this("GET", path, query, paymentHeader);
+    }
 
     @Override
     public String header(final String name) {
@@ -107,12 +104,6 @@ final class X402GateTest {
     final var body = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(resp.body()));
     assertEquals(1, body.accepts().size());
     assertEquals(PAY_TO, body.accepts().getFirst().payTo());
-  }
-
-  @Test
-  void twoArgOverloadReturns402() {
-    final var resp = gate().httpResponse("/resource", null);
-    assertEquals(402, resp.statusCode());
   }
 
   @Test
@@ -148,11 +139,12 @@ final class X402GateTest {
     ixs.add(computePrice(1_000));
     ixs.add(transfer());
     final byte[] txBytes = Transaction.createTx(managedFeePayer, ixs).serialized();
-    final String json = "{\"x402Version\":2,\"payload\":{\"transaction\":\""
+    final var json = "{\"x402Version\":2,\"payload\":{\"transaction\":\""
         + Base64.getEncoder().encodeToString(txBytes) + "\"}}";
-    final String header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    final var header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
 
-    final SvmExactSettler.TransactionSubmitter submitter = new SvmExactSettler.TransactionSubmitter() {
+    final var submitter = new SvmExactSettler.TransactionSubmitter() {
+
       @Override
       public String send(final String base64SignedTransaction) {
         return "ON_CHAIN_SIG";
@@ -165,7 +157,7 @@ final class X402GateTest {
     final var settler = new SvmExactSettler(new SvmExactVerifier(ACCOUNTS), signer, submitter, new SettlementCache());
     final var gate = new X402Gate(PROTECTED, requirements, null, settler);
 
-    final var resp = gate.httpResponse(new FakeRequest("/resource", null, header));
+    final var resp = gate.httpResponse(new FakeRequest("POST", "/resource", null, header));
     assertEquals(200, resp.statusCode());
 
     final var headerValue = resp.headers().get(X402.PAYMENT_RESPONSE_HEADER);
@@ -190,11 +182,11 @@ final class X402GateTest {
     ixs.add(computePrice(1_000));
     ixs.add(transfer());
     final byte[] txBytes = Transaction.createTx(managedFeePayer, ixs).serialized();
-    final String json = "{\"x402Version\":2,\"payload\":{\"transaction\":\""
+    final var json = "{\"x402Version\":2,\"payload\":{\"transaction\":\""
         + Base64.getEncoder().encodeToString(txBytes) + "\"}}";
-    final String header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    final var header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
 
-    final SvmExactSettler.TransactionSubmitter submitter = new SvmExactSettler.TransactionSubmitter() {
+    final var submitter = new SvmExactSettler.TransactionSubmitter() {
       @Override
       public String send(final String base64SignedTransaction) {
         throw new IllegalStateException("rpc down");
@@ -207,7 +199,7 @@ final class X402GateTest {
     final var settler = new SvmExactSettler(new SvmExactVerifier(ACCOUNTS), signer, submitter, new SettlementCache());
     final var gate = new X402Gate(PROTECTED, requirements, null, settler);
 
-    final var resp = gate.httpResponse(new FakeRequest("/resource", null, header));
+    final var resp = gate.httpResponse(new FakeRequest("POST", "/resource", null, header));
     assertEquals(402, resp.statusCode());
     final var body = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(resp.body()));
     assertEquals(X402Errors.TRANSACTION_FAILED, body.error());

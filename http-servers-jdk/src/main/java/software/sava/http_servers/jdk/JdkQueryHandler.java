@@ -25,6 +25,14 @@ final class JdkQueryHandler implements HttpHandler {
     return new JdkQueryHandler(executor, queryHandler);
   }
 
+  static HttpHandler createBlockingPostHandler(final QueryHandler queryHandler) {
+    return new JdkQueryHandler(null, queryHandler);
+  }
+
+  static HttpHandler createNonBlockingPostHandler(final Executor executor, final QueryHandler queryHandler) {
+    return new JdkQueryHandler(executor, queryHandler);
+  }
+
   @Override
   public void handle(final HttpExchange exchange) throws IOException {
     if (executor == null) {

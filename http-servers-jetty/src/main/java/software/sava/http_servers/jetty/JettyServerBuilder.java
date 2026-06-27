@@ -60,6 +60,16 @@ public class JettyServerBuilder extends BaseHttpServerBuilder<JettyHandler, Serv
   }
 
   @Override
+  protected JettyHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
+    return JettyQueryHandler.createNonBlockingPostHandler(nonBlockingPostHandler);
+  }
+
+  @Override
+  protected JettyHandler blockingPost(final QueryHandler blockingPostHandler) {
+    return JettyQueryHandler.createBlockingPostHandler(blockingPostHandler);
+  }
+
+  @Override
   protected void setController(final Server server, final HandlerMap<JettyHandler> handlerMap) {
     final var controller = new JettyController(handlerMap);
     final var compressionHandler = new CompressionHandler(controller);
