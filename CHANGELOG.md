@@ -1,5 +1,17 @@
 # Changelog
 
+## [25.1.0](https://github.com/sava-software/http-servers/compare/25.0.5...25.1.0) (2026-06-27)
+
+
+### Features
+
+* **http-servers-core:** add POST method support for query/path handlers ([ef874b2](https://github.com/sava-software/http-servers/commit/ef874b2034235a582c7f482d5e64ef6a1a9f7221))
+
+
+### Miscellaneous Chores
+
+* release 25.1.0 ([453ccff](https://github.com/sava-software/http-servers/commit/453ccffd870e1cccad946b830b8fca5095d0ae09))
+
 ## [25.0.5](https://github.com/sava-software/http-servers/compare/25.0.4...25.0.5) (2026-06-03)
 
 
