@@ -5,6 +5,7 @@ import software.sava.core.accounts.PublicKey;
 import java.util.ArrayList;
 import java.util.List;
 
+import static software.sava.http_servers.core.handlers.HandlerUtil.indexOfParam;
 import static software.sava.http_servers.core.handlers.HandlerUtil.parseParam;
 
 public class HandlerUtil {
@@ -13,7 +14,7 @@ public class HandlerUtil {
     if (query == null) {
       return defaultValue;
     } else {
-      int index = query.indexOf(param);
+      final int index = indexOfParam(query, param);
       return index < 0 ? defaultValue : PublicKey.fromBase58Encoded(parseParam(query, index, param));
     }
   }
@@ -28,12 +29,12 @@ public class HandlerUtil {
     if (query == null) {
       return NO_PARAMS;
     } else {
-      int from = query.indexOf(param);
+      int from = indexOfParam(query, param);
       if (from < 0) {
         return NO_PARAMS;
       }
       from += param.length();
-      int end = query.indexOf('&', from + 1);
+      int end = query.indexOf('&', from);
       if (end < 0) {
         end = query.length();
       }

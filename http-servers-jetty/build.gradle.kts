@@ -6,3 +6,9 @@ dependencies {
 //  runtimeOnly("org.eclipse.jetty.compression:jetty-compression-brotli")
 //  runtimeOnly("org.eclipse.jetty.compression:jetty-compression-zstandard")
 }
+
+testModuleInfo {
+  requires("org.junit.jupiter.api")
+  requires("java.net.http")
+  runtimeOnly("org.junit.jupiter.engine")
+}

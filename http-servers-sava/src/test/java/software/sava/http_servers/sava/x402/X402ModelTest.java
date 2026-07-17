@@ -102,6 +102,173 @@ final class X402ModelTest {
   }
 
   @Test
+  void paymentRequirementsNullFieldsRoundTrip() {
+    final var reqs = new PaymentRequirements(X402.SCHEME_EXACT, null, null, null, null, 0, null, null);
+    final var json = new StringBuilder();
+    reqs.appendTo(json);
+    final var parsed = PaymentRequirements.parse(systems.comodal.jsoniter.JsonIterator.parse(json.toString()));
+    assertEquals(reqs, parsed);
+  }
+
+  @Test
+  void paymentRequirementsExactJsonWithoutMemo() {
+    // a null memo must omit the field entirely, not write "memo":null
+    final var reqs = new PaymentRequirements("exact", "n", "5", ASSET, PAY_TO, 9, FEE_PAYER, null);
+    final var b = new StringBuilder();
+    reqs.appendTo(b);
+    assertEquals(
+        "{\"scheme\":\"exact\",\"network\":\"n\",\"amount\":\"5\",\"asset\":\"" + ASSET.toBase58()
+            + "\",\"payTo\":\"" + PAY_TO.toBase58() + "\",\"maxTimeoutSeconds\":9,\"extra\":{\"feePayer\":\""
+            + FEE_PAYER.toBase58() + "\"}}",
+        b.toString());
+  }
+
+  @Test
+  void paymentRequirementsDecoyParse() {
+    final var json = """
+        {"pad":"!!not-a-key!!","scheme":"exact","network":"n","amount":"5","asset":"%s",\
+        "payTo":"%s","maxTimeoutSeconds":9,\
+        "extra":{"zzz":"!!not-a-key!!","feePayer":"%s","memo":"m","memo2":"WRONG"},"amount2":"WRONG"}"""
+        .formatted(ASSET.toBase58(), PAY_TO.toBase58(), FEE_PAYER.toBase58());
+    final var parsed = PaymentRequirements.parse(systems.comodal.jsoniter.JsonIterator.parse(json));
+    assertEquals(new PaymentRequirements("exact", "n", "5", ASSET, PAY_TO, 9, FEE_PAYER, "m"), parsed);
+  }
+
+  @Test
+  void paymentPayloadDecoyParse() {
+    final var json = """
+        {"pad":"x","x402Version":3,\
+        "payload":{"pad":true,"transaction":"AAAA","transaction2":"WRONG"},"x402Version2":9}""";
+    final var parsed = PaymentPayload.parse(json);
+    assertEquals(3, parsed.x402Version());
+    assertEquals("AAAA", parsed.transaction());
+  }
+
+  @Test
+  void paymentRequiredTwoAcceptsRoundTrip() {
+    final var reqs1 = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, "1000", ASSET, PAY_TO, 60, FEE_PAYER, null);
+    final var reqs2 = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, "2000", ASSET, PAY_TO, 30, FEE_PAYER, "m");
+    final var required = new PaymentRequired(X402.X402_VERSION, null, null, List.of(reqs1, reqs2));
+
+    final var parsed = PaymentRequired.parse(
+        systems.comodal.jsoniter.JsonIterator.parse(required.toJsonBytes()));
+    assertEquals(List.of(reqs1, reqs2), parsed.accepts());
+    assertNull(parsed.error());
+    assertNull(parsed.resource());
+  }
+
+  @Test
+  void paymentRequiredDecoyParse() {
+    final var reqs = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, "1000", ASSET, PAY_TO, 60, FEE_PAYER, null);
+    final var json = """
+        {"pad":"x","x402Version":2,"error":"e","accepts":[%s],"error2":"WRONG"}"""
+        .formatted(jsonOf(reqs));
+    final var parsed = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(json));
+    assertEquals(2, parsed.x402Version());
+    assertEquals("e", parsed.error());
+    assertEquals(List.of(reqs), parsed.accepts());
+  }
+
+  private static String jsonOf(final PaymentRequirements reqs) {
+    final var b = new StringBuilder();
+    reqs.appendTo(b);
+    return b.toString();
+  }
+
+  @Test
+  void settlementResponseSuccessExactJson() {
+    // exact form: a successful settlement must not carry an errorReason field at all
+    final var response = SettlementResponse.success("5sig", "net", PAY_TO);
+    assertEquals(
+        "{\"success\":true,\"transaction\":\"5sig\",\"network\":\"net\",\"payer\":\"" + PAY_TO.toBase58() + "\"}",
+        response.toJson());
+  }
+
+  @Test
+  void settlementResponseNullFieldsRoundTrip() {
+    final var response = SettlementResponse.success(null, null, null);
+    final var parsed = SettlementResponse.parse(
+        systems.comodal.jsoniter.JsonIterator.parse(response.toJsonBytes()));
+    assertEquals(response, parsed);
+  }
+
+  @Test
+  void verifyResponseNullPayerRoundTrip() {
+    final var response = VerifyResponse.invalid(X402Errors.UNSUPPORTED_SCHEME, null);
+    final var parsed = VerifyResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(response.toJson()));
+    assertEquals(response, parsed);
+  }
+
+  @Test
+  void jsonStringEscapingExact() {
+    // space (0x20) stays raw while 0x01 and 0x1f are unicode-escaped: pins the < 0x20 boundary
+    final var resource = new Resource("u", "a b\u0001\u001Fc", "m");
+    final var b = new StringBuilder();
+    resource.appendTo(b);
+    assertEquals("{\"url\":\"u\",\"description\":\"a b\\u0001\\u001fc\",\"mimeType\":\"m\"}", b.toString());
+  }
+
+  @Test
+  void jsonStringEscapingRoundTrip() {
+    final var nasty = "a\"b\\c\nd\re\tf\bg\fhi";
+    final var resource = new Resource("https://example.com", nasty, "application/json");
+    final var b = new StringBuilder();
+    resource.appendTo(b);
+    final var parsed = Resource.parse(systems.comodal.jsoniter.JsonIterator.parse(b.toString()));
+    assertEquals(resource, parsed);
+  }
+
+  @Test
+  void parsersSkipUnknownFieldsAndDecoys() {
+    // a leading unknown field kills stop-iteration mutants; a trailing decoy of the same JSON
+    // type with a different value kills always-match dispatch mutants
+    final var resource = Resource.parse(systems.comodal.jsoniter.JsonIterator.parse(
+        "{\"pad\":\"x\",\"url\":\"u\",\"description\":\"d\",\"mimeType\":\"m\",\"mimeType2\":\"WRONG\"}"));
+    assertEquals(new Resource("u", "d", "m"), resource);
+
+    final var verify = VerifyResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(
+        "{\"pad\":\"x\",\"isValid\":false,\"invalidReason\":\"r\",\"payer\":\"" + PAY_TO.toBase58()
+            + "\",\"invalidReason2\":\"WRONG\"}"));
+    assertEquals(VerifyResponse.invalid("r", PAY_TO), verify);
+
+    final var settlement = SettlementResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(
+        "{\"pad\":\"x\",\"success\":true,\"errorReason\":\"e\",\"transaction\":\"t\",\"network\":\"n\",\"payer\":\""
+            + PAY_TO.toBase58() + "\",\"network2\":\"WRONG\"}"));
+    assertEquals(new SettlementResponse(true, "e", "t", "n", PAY_TO), settlement);
+  }
+
+  @Test
+  void settlementResponseFailureRoundTrip() {
+    final var failure = SettlementResponse.failure("insufficient_funds", "5sig", X402.SOLANA_MAINNET, PAY_TO);
+    final var decoded = new String(Base64.getDecoder().decode(failure.toBase64Header()), UTF_8);
+    final var parsed = SettlementResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(decoded));
+    assertEquals(failure, parsed);
+    assertFalse(parsed.success());
+    assertEquals("insufficient_funds", parsed.errorReason());
+    assertEquals("5sig", parsed.transaction());
+    assertEquals(X402.SOLANA_MAINNET, parsed.network());
+  }
+
+  @Test
+  void verifyResponseJsonBytes() {
+    final var response = VerifyResponse.invalid(X402Errors.MINT_MISMATCH, PAY_TO);
+    assertArrayEquals(response.toJson().getBytes(UTF_8), response.toJsonBytes());
+  }
+
+  @Test
+  void verifyResponseValidRoundTrip() {
+    final var valid = VerifyResponse.valid(PAY_TO);
+    final var parsed = VerifyResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(valid.toJson()));
+    assertEquals(valid, parsed);
+    assertTrue(parsed.isValid());
+    assertNull(parsed.invalidReason());
+    assertEquals(PAY_TO, parsed.payer());
+  }
+
+  @Test
   void verifyResponseRoundTrip() {
     final var invalid = VerifyResponse.invalid(X402Errors.MINT_MISMATCH, PAY_TO);
     final var parsed = VerifyResponse.parse(systems.comodal.jsoniter.JsonIterator.parse(invalid.toJson()));

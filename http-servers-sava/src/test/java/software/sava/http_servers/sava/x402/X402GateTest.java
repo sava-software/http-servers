@@ -110,6 +110,36 @@ final class X402GateTest {
   void invalidPaymentReturns402() {
     final var resp = gate().httpResponse(new FakeRequest("/resource", null, "not-base64-json"));
     assertEquals(402, resp.statusCode());
+    final var body = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(resp.body()));
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, body.error());
+  }
+
+  @Test
+  void blankHeaderReturns402() {
+    final var resp = gate().httpResponse(new FakeRequest("/resource", null, "   "));
+    assertEquals(402, resp.statusCode());
+    final var body = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(resp.body()));
+    assertEquals("X-PAYMENT header is required", body.error());
+  }
+
+  @Test
+  void failedVerificationReturns402WithReason() {
+    // a decodable payload whose transfer amount does not match the requirements
+    final var ixs = new ArrayList<Instruction>();
+    ixs.add(computeLimit(200_000));
+    ixs.add(computePrice(1_000));
+    ixs.add(TokenProgram.transferChecked(
+        ACCOUNTS.invokedTokenProgram(), SOURCE_ATA, MINT, destinationAta(), AUTHORITY, AMOUNT + 1, DECIMALS));
+    final byte[] txBytes = Transaction.createTx(FEE_PAYER, ixs).serialized();
+    final var json = "{\"x402Version\":2,\"payload\":{\"transaction\":\""
+        + Base64.getEncoder().encodeToString(txBytes) + "\"}}";
+    final var header = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+
+    final var resp = gate().httpResponse(new FakeRequest("/resource", null, header));
+    assertEquals(402, resp.statusCode());
+    assertNull(resp.headers().get(X402.PAYMENT_RESPONSE_HEADER));
+    final var body = PaymentRequired.parse(systems.comodal.jsoniter.JsonIterator.parse(resp.body()));
+    assertEquals(X402Errors.AMOUNT_INSUFFICIENT, body.error());
   }
 
   @Test

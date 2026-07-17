@@ -3,6 +3,8 @@ package software.sava.http_servers.sava.x402;
 import org.junit.jupiter.api.Test;
 import software.sava.core.accounts.PublicKey;
 import software.sava.core.accounts.SolanaAccounts;
+import software.sava.core.accounts.lookup.AddressLookupTable;
+import software.sava.core.accounts.meta.AccountMeta;
 import software.sava.core.tx.Instruction;
 import software.sava.core.tx.Transaction;
 import software.sava.idl.clients.spl.associated_token.gen.AssociatedTokenPDAs;
@@ -11,6 +13,7 @@ import software.sava.idl.clients.spl.token.gen.TokenProgram;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -227,5 +230,356 @@ final class SvmExactVerifierTest {
     final var resp = VERIFIER.verify(reqs, serialize(validInstructions()));
     assertFalse(resp.isValid());
     assertEquals(X402Errors.MISSING_FEE_PAYER, resp.invalidReason());
+  }
+
+  @Test
+  void nullPayload() {
+    final var resp = VERIFIER.verify((PaymentPayload) null, requirements(null));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, resp.invalidReason());
+  }
+
+  @Test
+  void payloadWithoutTransaction() {
+    final var resp = VERIFIER.verify(new PaymentPayload(2, null, null, null), requirements(null));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, resp.invalidReason());
+  }
+
+  @Test
+  void payloadWithMalformedBase64Transaction() {
+    final var resp = VERIFIER.verify(new PaymentPayload(2, null, null, "!!not base64!!"), requirements(null));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, resp.invalidReason());
+  }
+
+  @Test
+  void validPayloadObject() {
+    final var transaction = Base64.getEncoder().encodeToString(serialize(validInstructions()));
+    final var resp = VERIFIER.verify(new PaymentPayload(2, null, null, transaction), requirements(null));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+    assertEquals(AUTHORITY, resp.payer());
+  }
+
+  @Test
+  void nullRequirements() {
+    final var resp = VERIFIER.verify(null, serialize(validInstructions()));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNSUPPORTED_SCHEME, resp.invalidReason());
+  }
+
+  @Test
+  void unsupportedScheme() {
+    final var reqs = new PaymentRequirements(
+        "subscription", X402.SOLANA_MAINNET, Long.toString(AMOUNT), MINT, PAY_TO, 60, FEE_PAYER, null);
+    final var resp = VERIFIER.verify(reqs, serialize(validInstructions()));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNSUPPORTED_SCHEME, resp.invalidReason());
+  }
+
+  @Test
+  void missingAssetRequirement() {
+    final var reqs = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, Long.toString(AMOUNT), null, PAY_TO, 60, FEE_PAYER, null);
+    final var resp = VERIFIER.verify(reqs, serialize(validInstructions()));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNSUPPORTED_SCHEME, resp.invalidReason());
+  }
+
+  @Test
+  void missingPayToRequirement() {
+    final var reqs = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, Long.toString(AMOUNT), MINT, null, 60, FEE_PAYER, null);
+    final var resp = VERIFIER.verify(reqs, serialize(validInstructions()));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNSUPPORTED_SCHEME, resp.invalidReason());
+  }
+
+  @Test
+  void lookupTableTransactionRejected() {
+    // offload the mint and destination to a lookup table: unresolved indexed accounts
+    // cannot be verified, so the transaction must be rejected outright
+    final byte[] tableData = new byte[AddressLookupTable.LOOKUP_TABLE_META_SIZE + (2 * PublicKey.PUBLIC_KEY_LENGTH)];
+    MINT.write(tableData, AddressLookupTable.LOOKUP_TABLE_META_SIZE);
+    destinationAta().write(tableData, AddressLookupTable.LOOKUP_TABLE_META_SIZE + PublicKey.PUBLIC_KEY_LENGTH);
+    final var table = AddressLookupTable.readWithoutReverseLookup(key(7), tableData).withReverseLookup();
+
+    final var tx = Transaction.createTx(FEE_PAYER, validInstructions(), table);
+    final var resp = VERIFIER.verify(requirements(null), tx.serialized());
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, resp.invalidReason());
+  }
+
+  @Test
+  void nonTokenTransferProgram() {
+    final var ixs = validInstructions();
+    ixs.set(2, memo("not-a-transfer"));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.NO_TRANSFER_INSTRUCTION, resp.invalidReason());
+  }
+
+  private static byte[] transferCheckedData(final int discriminator) {
+    final byte[] data = new byte[10];
+    data[0] = (byte) discriminator;
+    putInt64LE(data, 1, AMOUNT);
+    data[9] = (byte) DECIMALS;
+    return data;
+  }
+
+  @Test
+  void tooFewTransferAccounts() {
+    final var ixs = validInstructions();
+    ixs.set(2, Instruction.createInstruction(
+        ACCOUNTS.invokedTokenProgram(), List.of(), transferCheckedData(12)));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.NO_TRANSFER_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void truncatedTransferDataRejected() {
+    // a one-byte data slice at the tail of the message makes the ix-data read overrun
+    final var ixs = validInstructions();
+    final var accounts = ixs.get(2).accounts();
+    ixs.set(2, Instruction.createInstruction(
+        ACCOUNTS.invokedTokenProgram(), accounts, new byte[]{12}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.NO_TRANSFER_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void wrongTransferDiscriminator() {
+    final var ixs = validInstructions();
+    final var accounts = ixs.get(2).accounts();
+    ixs.set(2, Instruction.createInstruction(
+        ACCOUNTS.invokedTokenProgram(), accounts, transferCheckedData(3)));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.NO_TRANSFER_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void feePayerIsSource() {
+    final var ixs = validInstructions();
+    ixs.set(2, transfer(FEE_PAYER, MINT, destinationAta(), AUTHORITY, AMOUNT));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.FEE_PAYER_TRANSFERRING_FUNDS, resp.invalidReason());
+  }
+
+  @Test
+  void feePayerInOptionalInstruction() {
+    final var ixs = validInstructions();
+    ixs.add(Instruction.createInstruction(
+        X402.LIGHTHOUSE_PROGRAM, List.of(AccountMeta.createRead(FEE_PAYER)), new byte[]{1}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.FEE_PAYER_TRANSFERRING_FUNDS, resp.invalidReason());
+  }
+
+  @Test
+  void malformedRequiredAmount() {
+    final var reqs = new PaymentRequirements(
+        X402.SCHEME_EXACT, X402.SOLANA_MAINNET, "one-thousand", MINT, PAY_TO, 60, FEE_PAYER, null);
+    final var resp = VERIFIER.verify(reqs, serialize(validInstructions()));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.AMOUNT_INSUFFICIENT, resp.invalidReason());
+  }
+
+  @Test
+  void wrongComputeLimitProgram() {
+    final var ixs = validInstructions();
+    ixs.set(0, memo("not-compute-budget"));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_LIMIT_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void emptyComputeLimitData() {
+    final var ixs = validInstructions();
+    ixs.set(0, Instruction.createInstruction(ACCOUNTS.computeBudgetProgram(), List.of(), new byte[0]));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_LIMIT_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void singleByteComputeLimitDataAccepted() {
+    // only the discriminator byte is inspected; a one-byte instruction is within contract
+    final var ixs = validInstructions();
+    ixs.set(0, Instruction.createInstruction(
+        ACCOUNTS.computeBudgetProgram(), List.of(), new byte[]{(byte) X402.COMPUTE_BUDGET_SET_LIMIT}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void wrongComputePriceProgram() {
+    final var ixs = validInstructions();
+    ixs.set(1, memo("not-compute-budget"));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_PRICE_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void shortComputePriceData() {
+    final byte[] data = new byte[8];
+    data[0] = (byte) X402.COMPUTE_BUDGET_SET_PRICE;
+    final var ixs = validInstructions();
+    ixs.set(1, Instruction.createInstruction(ACCOUNTS.computeBudgetProgram(), List.of(), data));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_PRICE_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void wrongComputePriceDiscriminator() {
+    final byte[] data = new byte[9];
+    data[0] = (byte) X402.COMPUTE_BUDGET_SET_LIMIT;
+    putInt64LE(data, 1, 1_000L);
+    final var ixs = validInstructions();
+    ixs.set(1, Instruction.createInstruction(ACCOUNTS.computeBudgetProgram(), List.of(), data));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_PRICE_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void maxComputePriceAccepted() {
+    final var ixs = validInstructions();
+    ixs.set(1, computePrice(X402.MAX_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void negativeComputePriceRejected() {
+    // the high bit set reads as negative: treated as unsigned it is far above the cap
+    final var ixs = validInstructions();
+    ixs.set(1, computePrice(-1L));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_PRICE_INSTRUCTION_TOO_HIGH, resp.invalidReason());
+  }
+
+  @Test
+  void sixInstructionsAccepted() {
+    final var ixs = validInstructions();
+    ixs.add(memo("invoice-123"));
+    ixs.add(Instruction.createInstruction(X402.LIGHTHOUSE_PROGRAM, List.of(), new byte[]{1}));
+    ixs.add(Instruction.createInstruction(X402.LIGHTHOUSE_PROGRAM, List.of(), new byte[]{2}));
+    final var resp = VERIFIER.verify(requirements("invoice-123"), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void memoV1Accepted() {
+    final var ixs = validInstructions();
+    ixs.add(Instruction.createInstruction(
+        ACCOUNTS.memoProgram(), List.of(), "invoice-123".getBytes(StandardCharsets.UTF_8)));
+    final var resp = VERIFIER.verify(requirements("invoice-123"), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void lighthouseInstructionAccepted() {
+    final var ixs = validInstructions();
+    ixs.add(Instruction.createInstruction(X402.LIGHTHOUSE_PROGRAM, List.of(), new byte[]{1}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void unknownFifthInstruction() {
+    final var ixs = validInstructions();
+    ixs.add(memo("a"));
+    ixs.add(Instruction.createInstruction(key(60), List.of(), new byte[]{1}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNKNOWN_FIFTH_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void unknownSixthInstruction() {
+    final var ixs = validInstructions();
+    ixs.add(memo("a"));
+    ixs.add(memo("b"));
+    ixs.add(Instruction.createInstruction(key(60), List.of(), new byte[]{1}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.UNKNOWN_SIXTH_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void twoMemosRejectedWhenMemoRequired() {
+    final var ixs = validInstructions();
+    ixs.add(memo("invoice-123"));
+    ixs.add(memo("invoice-123"));
+    final var resp = VERIFIER.verify(requirements("invoice-123"), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.MEMO_COUNT, resp.invalidReason());
+  }
+
+  @Test
+  void token2022TransferAccepted() {
+    final var dest2022 = AssociatedTokenPDAs.associatedTokenPDA(
+        ACCOUNTS.associatedTokenAccountProgram(), PAY_TO, ACCOUNTS.token2022Program(), MINT).publicKey();
+    final var ixs = validInstructions();
+    ixs.set(2, TokenProgram.transferChecked(
+        ACCOUNTS.invokedToken2022Program(), SOURCE_ATA, MINT, dest2022, AUTHORITY, AMOUNT, DECIMALS));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+    assertEquals(AUTHORITY, resp.payer());
+  }
+
+  @Test
+  void unknownProgramWithTransferCheckedShapeRejected() {
+    // a perfectly shaped TransferChecked from a foreign program must still be rejected
+    final var ixs = validInstructions();
+    final var accounts = ixs.get(2).accounts();
+    ixs.set(2, Instruction.createInstruction(key(60), accounts, transferCheckedData(12)));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.NO_TRANSFER_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void wrongProgramWithComputeLimitShapeRejected() {
+    final var ixs = validInstructions();
+    ixs.set(0, Instruction.createInstruction(
+        key(60), List.of(), new byte[]{(byte) X402.COMPUTE_BUDGET_SET_LIMIT}));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_LIMIT_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void wrongProgramWithComputePriceShapeRejected() {
+    final byte[] data = new byte[9];
+    data[0] = (byte) X402.COMPUTE_BUDGET_SET_PRICE;
+    putInt64LE(data, 1, 1_000L);
+    final var ixs = validInstructions();
+    ixs.set(1, Instruction.createInstruction(key(60), List.of(), data));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.COMPUTE_PRICE_INSTRUCTION, resp.invalidReason());
+  }
+
+  @Test
+  void zeroComputePriceAccepted() {
+    final var ixs = validInstructions();
+    ixs.set(1, computePrice(0L));
+    final var resp = VERIFIER.verify(requirements(null), serialize(ixs));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  @Test
+  void emptyMemoRequirementIgnored() {
+    final var resp = VERIFIER.verify(requirements(""), serialize(validInstructions()));
+    assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
   }
 }

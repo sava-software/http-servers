@@ -205,6 +205,81 @@ final class SvmExactSettlerTest {
     assertEquals("SIG_PENDING", response.transaction(), "confirmation failure should still report the signature");
   }
 
+  @Test
+  void submittedSignatureSignsTheMessageBytes() {
+    final var submitter = FakeSubmitter.ok("SIG");
+    final var response = settler(submitter).settle(payload(feePayer), requirements(feePayer));
+    assertTrue(response.success(), () -> "got: " + response.errorReason());
+
+    final byte[] signed = Base64.getDecoder().decode(submitter.submitted);
+    final int numSigs = Byte.toUnsignedInt(signed[0]);
+    final int msgOffset = 1 + (numSigs * Transaction.SIGNATURE_LENGTH);
+    final byte[] expected = feePayerSigner.sign(signed, msgOffset, signed.length - msgOffset);
+    assertArrayEquals(expected, Arrays.copyOfRange(signed, 1, 1 + Transaction.SIGNATURE_LENGTH),
+        "slot 0 must hold the fee payer's signature over the message bytes");
+  }
+
+  @Test
+  void txFeePayerNotManagedKeyDoesNotSubmit() {
+    // the transaction and requirements agree on a fee payer this facilitator does not manage
+    final var other = key(8);
+    final var submitter = FakeSubmitter.ok("UNUSED");
+    final var response = settler(submitter).settle(payload(other), requirements(other));
+
+    assertFalse(response.success());
+    assertEquals(X402Errors.FEE_PAYER_MISMATCH, response.errorReason());
+    assertEquals(0, submitter.sendCount, "must not submit without the matching signing key");
+  }
+
+  @Test
+  void requirementsFeePayerMismatchWithManagedTxFeePayer() {
+    // the transaction names the managed key, but the advertised requirements name another
+    final var submitter = FakeSubmitter.ok("UNUSED");
+    final var response = settler(submitter).settle(payload(feePayer), requirements(key(9)));
+
+    assertFalse(response.success());
+    assertEquals(X402Errors.FEE_PAYER_MISMATCH, response.errorReason());
+    assertEquals(0, submitter.sendCount);
+  }
+
+  @Test
+  void nullRequirementsFailVerification() {
+    final var submitter = FakeSubmitter.ok("UNUSED");
+    final var response = settler(submitter).settle(payload(feePayer), null);
+
+    assertFalse(response.success());
+    assertEquals(X402Errors.UNSUPPORTED_SCHEME, response.errorReason());
+    assertNull(response.network());
+    assertEquals(0, submitter.sendCount);
+  }
+
+  @Test
+  void distinctPaymentsDoNotCollideInTheCache() {
+    final var cache = new SettlementCache();
+    final var first = settler(FakeSubmitter.ok("SIG1"), cache).settle(payload(feePayer), requirements(feePayer));
+    assertTrue(first.success());
+
+    // a different message (different compute price) must produce a different cache key
+    final var ixs = new ArrayList<Instruction>();
+    ixs.add(computeLimit(200_000));
+    ixs.add(computePrice(2_000));
+    ixs.add(transfer());
+    final var otherTx = Transaction.createTx(feePayer, ixs).serialized();
+    final var otherPayload = new PaymentPayload(2, null, null, Base64.getEncoder().encodeToString(otherTx));
+
+    final var submitter = FakeSubmitter.ok("SIG2");
+    final var second = settler(submitter, cache).settle(otherPayload, requirements(feePayer));
+    assertTrue(second.success(), () -> "got: " + second.errorReason());
+    assertEquals(1, submitter.sendCount);
+  }
+
+  @Test
+  void rpcSubmitterFactory() {
+    assertNotNull(SvmExactSettler.TransactionSubmitter.rpc(
+        null, software.sava.rpc.json.http.request.Commitment.CONFIRMED,
+        java.time.Duration.ofSeconds(1), java.time.Duration.ofMillis(10)));
+  }
+
   private static boolean isAllZero(final byte[] bytes) {
     for (final byte b : bytes) {
       if (b != 0) {
