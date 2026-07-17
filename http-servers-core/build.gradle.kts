@@ -17,4 +17,9 @@ hardening {
     )
     targetTests = "software.sava.http_servers.core.handlers.*Test*"
   }
+  mutation.register("wiring") {
+    // handler-group include/exclude filtering: decides which handlers get registered
+    targetClasses = listOf("software.sava.http_servers.core.server.BaseHandlerWiring")
+    targetTests = "software.sava.http_servers.core.server.BaseHandlerWiring*Test*"
+  }
 }

@@ -25,14 +25,19 @@ method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
   a `ConditionalsBoundaryMutator` on the `to < 0` sentinel in `parseParam`, equivalent — the
   `substring(from)` and `substring(from, to)` branches coincide when `to == from`). Tests live
   in `HandlerUtilTests` and `HandlerMapTests`.
+- `./gradlew :http-servers-core:pitestWiring` — PIT over `BaseHandlerWiring` (the handler-group
+  include/exclude filter that decides which handlers get registered) against
+  `BaseHandlerWiringTests`. Baseline 2026-07-17: 78 mutations, **100% killed**.
 
-Note (fixed 2026-07-17): `HandlerUtil` parameter lookup used `query.indexOf(param)`, which
-matched a parameter name as a substring of another (`page=` inside `perpage=`) and did not
-require the match to sit at a parameter boundary. Replaced with `indexOfParam`, which only
-accepts a match at the query start or immediately after `&`. The same substring bug existed in
-`http-servers-sava`'s `handlers.HandlerUtil` (public-key params) and was fixed the same way.
-No fuzz harness here: a query-string splitter's boundaries all live in tiny inputs the unit
-tests reach directly.
+`BaseHandlerWiring`'s include/exclude predicates must stay strict negations
+(`includeGroup == !excludeGroup`, `includePath == !excludePath`) across the full truth table;
+`BaseHandlerWiringTests` enforces this.
+
+Query param lookup must match only at a parameter boundary (query start or after `&`), never
+as a substring (`page=` must not match inside `perpage=`) — use `indexOfParam`, not
+`query.indexOf`. Applies to both this module's `HandlerUtil` and `http-servers-sava`'s
+`handlers.HandlerUtil`. No fuzz harness here: a query-string splitter's boundaries all live in
+tiny inputs the unit tests reach directly.
 
 ### http-servers-sava — x402 payment gate (`software.sava.http_servers.sava.x402`)
 
@@ -68,15 +73,13 @@ sponsors, so this is the most heavily tested surface.
   `X402Gate.httpResponse` answers every request with a 402 or the protected 200, never a
   throwable. Seeded from `src/test/resources/fuzz/x402Payload`.
 
-Fuzzing this surface (2026-07-17) found and fixed one class of defect in `SvmExactVerifier`:
-the `TransactionSkeleton` parser walks raw offsets and resolves lazily, so a malformed body
-that still forms a valid header can yield instructions with `null` programs or accounts, or
-data slices that overrun the transaction bytes. `verify` dereferenced these in the rule checks
-(`transferAccounts.get(i).publicKey()`, `instruction.copyData()`) and threw `NullPointerException`
-/ `ArrayIndexOutOfBoundsException` past its own `try/catch`. Fixed by validating every parsed
-instruction (non-null program, non-null accounts, in-bounds data slice) immediately after
-`parseInstructions`, returning `TRANSACTION_COULD_NOT_BE_DECODED` otherwise. Both crashing
-inputs are committed to the `svmVerify` corpus and replayed by `VerifyFuzzRegressionTest`.
+The up-front instruction validation in `SvmExactVerifier.verify` (non-null program, non-null
+accounts, in-bounds data slice, returning `TRANSACTION_COULD_NOT_BE_DECODED` otherwise) is
+load-bearing, not redundant: `TransactionSkeleton` resolves lazily, so a malformed body that
+still forms a valid header yields instructions with `null` programs/accounts or overrunning
+data slices, which the rule checks would otherwise dereference and throw past `verify`'s own
+`try/catch`. The `crash_*` inputs in the `svmVerify` corpus, replayed by
+`VerifyFuzzRegressionTest`, guard this.
 
 ### Adding a target
 

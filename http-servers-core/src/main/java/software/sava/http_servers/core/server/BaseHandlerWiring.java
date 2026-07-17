@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
+public class BaseHandlerWiring<HG> implements HandlerWiring<HG> {
 
   private final HttpServerBuilder serverBuilder;
   protected final Map<HG, Set<String>> includeHandlersMap;
@@ -28,12 +28,18 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
 
   @Override
   public boolean includeGroup(final HG handlerGroup) {
-    final var inclusions = includeHandlersMap.get(handlerGroup);
-    if (inclusions != null && !inclusions.isEmpty()) {
-      return true;
-    }
     final var exclusions = excludeHandlersMap.get(handlerGroup);
-    return exclusions == null || !exclusions.isEmpty();
+    if (exclusions != null && exclusions.isEmpty()) {
+      // an empty exclude-set blacklists the whole group
+      return false;
+    }
+    final var inclusions = includeHandlersMap.get(handlerGroup);
+    if (inclusions != null) {
+      // an include-set is a whitelist; empty means nothing is included
+      return !inclusions.isEmpty();
+    }
+    // no include-set and a non-empty (or absent) exclude-set: included by default
+    return true;
   }
 
   @Override
@@ -62,16 +68,7 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
 
   @Override
   public boolean excludePath(final HG handlerGroup, final String path) {
-    if (includeGroup(handlerGroup)) {
-      final var exclusions = excludeHandlersMap.get(handlerGroup);
-      if (exclusions != null && exclusions.contains(path)) {
-        return true;
-      }
-      final var inclusions = includeHandlersMap.get(handlerGroup);
-      return inclusions == null || !inclusions.contains(path);
-    } else {
-      return true;
-    }
+    return !includePath(handlerGroup, path);
   }
 
   @Override
@@ -111,7 +108,9 @@ public class BaseHandlerWiring<HG, H> implements HandlerWiring<HG> {
   }
 
   @Override
-  public void queryNonBlockingPost(final HG handlerGroup, final String path, final QueryHandler nonBlockingPostHandler) {
+  public void queryNonBlockingPost(final HG handlerGroup,
+                                   final String path,
+                                   final QueryHandler nonBlockingPostHandler) {
     if (includePath(handlerGroup, path)) {
       serverBuilder.nonBlockingQueryPost(path, nonBlockingPostHandler);
     }
