@@ -8,6 +8,9 @@ build/
 gradle-app.setting
 .gradletasknamecache
 
+# arcmutate incremental-analysis history (machine-local, written by the hardening plugin)
+.pitest-history/
+
 # IntelliJ IDEA
 .idea/
 *.iml
