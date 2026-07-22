@@ -1,0 +1,203 @@
+openapi: 3.1.0
+
+info:
+  title: http-servers-hello
+  version: 25.1.1
+  summary: Demo service that boots the sava http-servers stack against any discovered backend.
+  description: |
+    `http-servers-hello` is the demo bootstrap for the sava http-servers stack. It resolves an
+    `HttpServerBuilderFactory` over `ServiceLoader` by simple name, wires a single handler and
+    starts the server, so the same surface is served by every backend (`JDKHttpServerBuilderFactory`,
+    `JettyServerBuilderFactory`, `FusionAuthBuilderFactory`). `Entrypoint` defaults to the Jetty
+    backend on `localhost:4242`.
+
+    The service exposes exactly one route, `GET /hello`. A second path, `/exclude`, exists in the
+    source to demonstrate the wiring exclusion: it is offered to `HandlerWiring` but the `HELLO`
+    group excludes it, so it is never registered and answers `404` like any unknown path. It is
+    deliberately absent from this document — it is not part of the served surface.
+
+    Registration is exact-match, and the builder registers each query path both with and without a
+    trailing slash, so `GET /hello/` is an alias for `GET /hello`. It is not listed separately
+    below to keep generated clients to one operation.
+
+    **Backend-dependent error bodies.** The status codes and the `Allow` header are identical
+    across backends, but the bodies are not. The Jetty and FusionAuth controllers write a JSON
+    `{"msg": "..."}` explanation on `404` and `405`; the JDK backend sends those statuses with an
+    empty body and no `Content-Type`. Treat the error body as advisory and branch on the status
+    code. This is described per-response below.
+
+    **Backend-dependent CORS.** Only the Jetty and FusionAuth backends implement CORS. The JDK
+    backend never writes `Access-Control-Allow-Origin` and has no pre-flight path, so `OPTIONS`
+    there resolves as an ordinary method lookup and answers `405 Allow: GET`. A browser client
+    therefore cannot make a cross-origin call against the JDK backend. The CORS-bearing responses
+    below are marked accordingly.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://{host}:{port}
+    description: Local demo server started by Entrypoint.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '4242'
+
+tags:
+  - name: hello
+    description: The single demo route.
+
+paths:
+  /hello:
+    get:
+      tags: [hello]
+      operationId: getHello
+      summary: Return the constant greeting.
+      description: |
+        Answers with a fixed JSON greeting. The handler ignores the request entirely — query
+        string, headers and body are all unread — so the response is byte-identical on every call.
+        Registered as a non-blocking query handler, and aliased at `/hello/`.
+      responses:
+        '200':
+          description: The greeting.
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Greeting'
+              example:
+                message: Hello
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    options:
+      tags: [hello]
+      operationId: preflightHello
+      summary: CORS pre-flight for the greeting (Jetty and FusionAuth backends only).
+      description: |
+        **Jetty and FusionAuth backends only.** The JDK backend has no pre-flight path: every
+        `OPTIONS` request there falls through to an ordinary method lookup and answers
+        `405 Allow: GET`, whatever headers it carries.
+
+        On the backends that support it, a request is treated as a pre-flight only when it is
+        `OPTIONS` **and** carries a non-blank `Access-Control-Request-Method`. The controller
+        resolves that requested method against the handler map: if it resolves, the pre-flight is
+        approved and answered directly by the controller with an empty body; if it does not, the
+        ordinary `404`/`405` path applies — so a pre-flight for `POST` on `/hello` gets
+        `405 Allow: GET`.
+
+        The CORS headers are only written when the request carries an `Origin`. An `OPTIONS`
+        request without `Access-Control-Request-Method` is not a pre-flight and falls through to
+        normal routing, which yields `405` with `Allow: GET` because no `OPTIONS` handler is
+        registered.
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - name: Access-Control-Request-Method
+          in: header
+          required: true
+          description: The method the browser intends to use. Must be non-blank to count as a pre-flight.
+          schema:
+            type: string
+            example: GET
+        - name: Access-Control-Request-Headers
+          in: header
+          required: false
+          description: Echoed back verbatim in `Access-Control-Allow-Headers`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: |
+            Pre-flight approved; the body is empty. Only reachable on the Jetty and FusionAuth
+            backends, and only when the request carries both `Origin` and a resolvable
+            `Access-Control-Request-Method`.
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/AccessControlAllowOrigin'
+            Access-Control-Allow-Methods:
+              description: |
+                The approved method — the value of `Access-Control-Request-Method`, echoed because
+                it resolved to a handler. Sent only on pre-flights; ordinary responses omit it.
+              schema:
+                type: string
+                example: GET
+            Access-Control-Allow-Headers:
+              description: Echo of `Access-Control-Request-Headers`.
+              schema:
+                type: string
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    Greeting:
+      type: object
+      description: The constant demo payload.
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          const: Hello
+          description: Always the literal `Hello`.
+
+    Error:
+      type: object
+      description: |
+        Explanation written by the Jetty and FusionAuth controllers on `404` and `405`. The JDK
+        backend sends no body at all for these statuses.
+      required: [msg]
+      properties:
+        msg:
+          type: string
+          description: Human-readable reason.
+
+  headers:
+    AccessControlAllowOrigin:
+      description: |
+        Echo of the request's `Origin`, written whenever that header is present. Absent otherwise —
+        the service does not emit a wildcard. Jetty and FusionAuth backends only; the JDK backend
+        never writes this header.
+      required: false
+      schema:
+        type: string
+        example: https://example.test
+
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: false
+      description: When present, echoed back in `Access-Control-Allow-Origin`.
+      schema:
+        type: string
+
+  responses:
+    MethodNotAllowed:
+      description: |
+        The path is registered but not for this method. Body is JSON on Jetty and FusionAuth,
+        empty on the JDK backend.
+      headers:
+        Allow:
+          description: Comma-separated methods registered for this path.
+          required: true
+          schema:
+            type: string
+            example: GET
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            msg: Method not allowed.
+
+    InternalServerError:
+      description: |
+        The handler threw. The failure is logged server-side and the response is closed with no
+        body; no detail is exposed to the caller.
