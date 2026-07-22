@@ -53,7 +53,7 @@ public abstract class BaseJulLogger {
         : new Caller(stackFrame.getClassName(), stackFrame.getMethodName());
   }
 
-  private static String formatPlaceholders(final String message, final Object... values) {
+  static String formatPlaceholders(final String message, final Object... values) {
     if (message.indexOf('{') < 0) {
       return message;
     }
@@ -63,7 +63,7 @@ public abstract class BaseJulLogger {
       char c = message.charAt(i);
       if (c == '\\') {
         // Support simple escaping of "\{}" -> "{}" without substitution
-        if (i + 2 <= len && i + 1 < len && message.charAt(i + 1) == '{') {
+        if (i + 1 < len && message.charAt(i + 1) == '{') {
           // Skip the backslash, emit '{'
           sb.append('{');
           i++; // skip '{'
@@ -85,7 +85,7 @@ public abstract class BaseJulLogger {
     return sb.toString();
   }
 
-  private static String stringify(final Object v) {
+  static String stringify(final Object v) {
     if (v == null) {
       return "null";
     }

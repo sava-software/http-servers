@@ -1,0 +1,14 @@
+software.sava.http_servers.jetty.JettyCachedJsonResponseHandler,handle,27,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,35,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,66,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,69,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,78,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,81,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,81,BooleanTrueReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,85,VoidMethodCallMutator,SURVIVED
+software.sava.http_servers.jetty.JettyController,handle,87,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyQueryHandler,handle,42,BooleanFalseReturnValsMutator,SURVIVED
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,23,VoidMethodCallMutator,SURVIVED
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,28,VoidMethodCallMutator,SURVIVED
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,33,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,34,VoidMethodCallMutator,SURVIVED

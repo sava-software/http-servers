@@ -22,19 +22,6 @@ final class ResponseUtil {
   }
 
   static void writeResponse(final int responseCode,
-                            final String contentType,
-                            final HTTPResponse response,
-                            final String responseString) throws IOException {
-    writeResponse(responseCode, contentType, response, responseString.getBytes(StandardCharsets.UTF_8));
-  }
-
-  static void writeResponse(final String contentType,
-                            final HTTPResponse response,
-                            final String responseString) throws IOException {
-    writeResponse(200, contentType, response, responseString.getBytes(StandardCharsets.UTF_8));
-  }
-
-  static void writeResponse(final int responseCode,
                             final HTTPResponse response,
                             final String responseString) throws IOException {
     writeResponse(responseCode, HTTPValues.ContentTypes.ApplicationJson, response, responseString.getBytes(StandardCharsets.UTF_8));

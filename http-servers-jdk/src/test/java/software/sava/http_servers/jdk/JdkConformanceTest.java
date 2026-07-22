@@ -1,0 +1,339 @@
+package software.sava.http_servers.jdk;
+
+import org.junit.jupiter.api.Test;
+import software.sava.http_servers.core.response.HttpResponse;
+
+import java.net.ServerSocket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.Executors;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+/// Pins the parts of the core Request/HttpResponse contract that every backend must agree
+/// on: the raw query string, 500 on a throwing handler (never a hang or connection abort),
+/// custom status/header propagation (the x402 payment-gate shape), cached JSON responses,
+/// and case-insensitive request-header lookup.
+final class JdkConformanceTest {
+
+  private static int freePort() throws Exception {
+    try (final var socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    }
+  }
+
+  private static int serve(final java.util.function.Consumer<software.sava.http_servers.core.server.HttpServerBuilder> register)
+      throws Exception {
+    final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+    register.accept(builder);
+    final int port = freePort();
+    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", port).start();
+    return port;
+  }
+
+  private static java.net.http.HttpResponse<String> get(final HttpClient client, final int port, final String pathAndQuery)
+      throws Exception {
+    return client.send(
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + pathAndQuery))
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build(),
+        BodyHandlers.ofString()
+    );
+  }
+
+  @Test
+  void rawQueryStringReachesTheHandler() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/q", request ->
+            HttpResponse.response("text/plain", String.valueOf(request.query()))));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var encoded = get(client, port, "/q?keys=a%26b&x=1");
+      assertEquals(200, encoded.statusCode());
+      assertEquals("keys=a%26b&x=1", encoded.body(),
+          "percent-encoded delimiters must reach the handler undecoded");
+
+      final var absent = get(client, port, "/q");
+      assertEquals("null", absent.body(), "a request without a query must yield null");
+    }
+  }
+
+  /// Captures JUL records published under {@code loggerName} while {@code body} runs.
+  private static java.util.List<java.util.logging.LogRecord> recordLogs(
+      final String loggerName, final org.junit.jupiter.api.function.Executable body) throws Throwable {
+    final var records = java.util.Collections.synchronizedList(new java.util.ArrayList<java.util.logging.LogRecord>());
+    final var jul = java.util.logging.Logger.getLogger(loggerName);
+    final var handler = new java.util.logging.Handler() {
+      @Override
+      public void publish(final java.util.logging.LogRecord record) {
+        records.add(record);
+      }
+
+      @Override
+      public void flush() {
+      }
+
+      @Override
+      public void close() {
+      }
+    };
+    jul.addHandler(handler);
+    try {
+      body.execute();
+    } finally {
+      jul.removeHandler(handler);
+    }
+    return records;
+  }
+
+  @Test
+  void throwingBlockingHandlerAnswers500() throws Throwable {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/boom", request -> {
+          throw new IllegalStateException("handler bug");
+        }));
+
+    final var logs = recordLogs(JdkController.class.getName(), () -> {
+      try (final var client = HttpClient.newHttpClient()) {
+        assertEquals(500, get(client, port, "/boom").statusCode());
+      }
+    });
+    org.junit.jupiter.api.Assertions.assertTrue(
+        logs.stream().anyMatch(r -> r.getThrown() instanceof IllegalStateException),
+        "the handler failure must be logged, not swallowed");
+  }
+
+  @Test
+  void throwingNonBlockingHandlerAnswers500() throws Throwable {
+    final int port = serve(builder ->
+        builder.nonBlockingQueryHandler("/boom", request -> {
+          throw new IllegalStateException("handler bug");
+        }));
+
+    final var logs = recordLogs(JdkQueryHandler.class.getName(), () -> {
+      try (final var client = HttpClient.newHttpClient()) {
+        assertEquals(500, get(client, port, "/boom").statusCode());
+      }
+    });
+    org.junit.jupiter.api.Assertions.assertTrue(
+        logs.stream().anyMatch(r -> r.getThrown() instanceof IllegalStateException),
+        "the handler failure must be logged, not swallowed");
+  }
+
+  @Test
+  void statusAndCustomHeadersCrossTheWire() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/pay", request ->
+            HttpResponse.json(402, "{\"error\":\"payment required\"}")
+                .withHeader("X-Payment-Response", "settlement-abc")));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = get(client, port, "/pay");
+      assertEquals(402, response.statusCode());
+      assertEquals("settlement-abc", response.headers().firstValue("X-Payment-Response").orElse(null));
+      assertEquals("application/json", response.headers().firstValue("Content-Type").orElse(null));
+      assertEquals("{\"error\":\"payment required\"}", response.body());
+    }
+  }
+
+  @Test
+  void cachedHandlerServesJsonBytes() throws Exception {
+    final byte[] cached = "{\"cached\":true}".getBytes(StandardCharsets.UTF_8);
+    final int port = serve(builder -> builder.cachedQueryHandler("/cached", () -> cached));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/cached"))
+              .timeout(Duration.ofSeconds(10))
+              .GET()
+              .build(),
+          BodyHandlers.ofByteArray()
+      );
+      assertEquals(200, response.statusCode());
+      assertEquals("application/json", response.headers().firstValue("Content-Type").orElse(null));
+      assertArrayEquals(cached, response.body());
+    }
+  }
+
+  @Test
+  void headerLookupIsCaseInsensitive() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/h", request ->
+            HttpResponse.response("text/plain", String.valueOf(request.header("X-Payment")))));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/h"))
+              .timeout(Duration.ofSeconds(10))
+              .header("x-payment", "header-value")
+              .GET()
+              .build(),
+          BodyHandlers.ofString()
+      );
+      assertEquals("header-value", response.body());
+    }
+  }
+
+  @Test
+  void queryHandlerPathsMatchExactly() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/echo", request ->
+            HttpResponse.response("text/plain", "echo")));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals(200, get(client, port, "/echo").statusCode());
+      assertEquals(200, get(client, port, "/echo/").statusCode(),
+          "the builder registers the trailing-slash alias");
+      assertEquals(404, get(client, port, "/echo/sub").statusCode(),
+          "query-handler paths must not prefix-match");
+      assertEquals(404, get(client, port, "/echoes").statusCode());
+      assertEquals(404, get(client, port, "/nowhere").statusCode());
+    }
+  }
+
+  @Test
+  void pathHandlersMatchByPrefix() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingPathHandler("/files/", request ->
+            HttpResponse.response("text/plain", request.path())));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var nested = get(client, port, "/files/a/b");
+      assertEquals(200, nested.statusCode(), "path handlers are prefix routes");
+      assertEquals("/files/a/b", nested.body());
+      assertEquals(404, get(client, port, "/other").statusCode());
+    }
+  }
+
+  @Test
+  void nonBlockingPostRoundTrip() throws Exception {
+    final int port = serve(builder ->
+        builder.nonBlockingQueryPost("/np", request ->
+            HttpResponse.response("text/plain", new String(request.body(), StandardCharsets.UTF_8))));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/np"))
+              .timeout(Duration.ofSeconds(10))
+              .POST(HttpRequest.BodyPublishers.ofString("posted"))
+              .build(),
+          BodyHandlers.ofString()
+      );
+      assertEquals(200, response.statusCode());
+      assertEquals("posted", response.body());
+    }
+  }
+
+  /// Counts dispatches while delegating to a real executor.
+  private static final class RecordingExecutor implements java.util.concurrent.Executor {
+    private final java.util.concurrent.Executor delegate = Executors.newVirtualThreadPerTaskExecutor();
+    private final java.util.concurrent.atomic.AtomicInteger dispatches = new java.util.concurrent.atomic.AtomicInteger();
+
+    @Override
+    public void execute(final Runnable command) {
+      dispatches.incrementAndGet();
+      delegate.execute(command);
+    }
+  }
+
+  @Test
+  void nonBlockingHandlersRunOnTheTaskExecutor() throws Exception {
+    final var taskExecutor = new RecordingExecutor();
+    final var builder = new JdkServerBuilder(taskExecutor);
+    builder.nonBlockingQueryHandler("/nb", request -> HttpResponse.response("text/plain", "nb"));
+    builder.blockingQueryHandler("/b", request -> HttpResponse.response("text/plain", "b"));
+    final int port = freePort();
+    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", port).start();
+
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("b", get(client, port, "/b").body());
+      assertEquals(0, taskExecutor.dispatches.get(), "blocking handlers must not use the task executor");
+      assertEquals("nb", get(client, port, "/nb").body());
+      assertEquals(1, taskExecutor.dispatches.get(), "non-blocking handlers must run on the task executor");
+    }
+  }
+
+  @Test
+  void requestsAreDispatchedOnTheServerExecutor() throws Exception {
+    final var serverExecutor = new RecordingExecutor();
+    final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+    builder.blockingQueryHandler("/e", request -> HttpResponse.response("text/plain", "e"));
+    final int port = freePort();
+    builder.createServer(serverExecutor, "localhost", port).start();
+
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("e", get(client, port, "/e").body());
+    }
+    // the server may dispatch several events per exchange; zero means setExecutor was dropped
+    org.junit.jupiter.api.Assertions.assertTrue(serverExecutor.dispatches.get() > 0,
+        "the configured executor must dispatch exchanges");
+  }
+
+  @Test
+  void absentHostBindsAllInterfaces() throws Exception {
+    for (final String host : new String[]{null, "  "}) {
+      final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+      final int port = freePort();
+      builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, port).start();
+      try (final var client = HttpClient.newHttpClient()) {
+        assertEquals("w", client.send(
+            HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/w"))
+                .timeout(Duration.ofSeconds(10))
+                .GET()
+                .build(),
+            BodyHandlers.ofString()
+        ).body(), "host=" + host);
+      }
+    }
+  }
+
+  @Test
+  void invalidPortPropagatesTheFailure() throws Throwable {
+    final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+    final var logs = recordLogs("software.sava.http_servers.core.server.HttpServerBuilder", () ->
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
+            builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", -1)));
+    org.junit.jupiter.api.Assertions.assertTrue(
+        logs.stream().anyMatch(r -> r.getThrown() instanceof IllegalArgumentException),
+        "the create failure must be logged before the rethrow");
+  }
+
+  @Test
+  void optionsAnswers405WithoutCorsSupport() throws Exception {
+    // deliberate divergence: the jdk adapter has no CORS handling, so a pre-flight is an
+    // unknown method on the path and gets a 405 with the Allow header
+    final int port = serve(builder ->
+        builder.blockingQueryPost("/pay", request -> HttpResponse.response("text/plain", "paid")));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var preflight = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/pay"))
+              .timeout(Duration.ofSeconds(10))
+              .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+              .header("Origin", "https://app.example")
+              .header("Access-Control-Request-Method", "POST")
+              .build(),
+          BodyHandlers.ofString());
+      assertEquals(405, preflight.statusCode());
+      assertEquals("POST", preflight.headers().firstValue("Allow").orElse(null));
+    }
+  }
+
+  @Test
+  void bodyOnAGetRequestIsEmptyNotNull() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/len", request ->
+            HttpResponse.response("text/plain", String.valueOf(request.body().length))));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("0", get(client, port, "/len").body());
+    }
+  }
+}

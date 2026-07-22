@@ -76,6 +76,14 @@ final class HandlerUtilTests {
   }
 
   @Test
+  void parseKeyListIgnoresCommaInEarlierParam() {
+    // the multi-key scan starts its comma search a full key-length past the parameter start;
+    // a comma belonging to an earlier parameter must not derail it
+    final var query = "list=a,b&keys=" + KEY_1.toBase58() + ',' + KEY_2.toBase58();
+    assertEquals(List.of(KEY_1, KEY_2), parsePublicKeyParams(query, "keys="));
+  }
+
+  @Test
   void parseKeyListToleratesTrailingComma() {
     assertEquals(List.of(KEY_1, KEY_2), parsePublicKeyParams(
         "keys=" + KEY_1.toBase58() + ',' + KEY_2.toBase58() + ',', "keys="));

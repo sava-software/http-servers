@@ -12,14 +12,12 @@ final class JettyCachedJsonResponseHandler extends BaseJettyHandler {
   private final CachedResponse cachedResponse;
 
   JettyCachedJsonResponseHandler(final CachedResponse cachedResponse) {
-    super(InvocationType.NON_BLOCKING, ALLOW_GET);
+    super(InvocationType.NON_BLOCKING);
     this.cachedResponse = cachedResponse;
   }
 
   @Override
   public boolean handle(final Request request, final Response response, final Callback callback) {
-    super.handle(request, response, callback);
-
     final var responseHeaders = response.getHeaders();
     responseHeaders.put(JSON_CONTENT);
 

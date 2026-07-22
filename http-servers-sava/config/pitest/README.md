@@ -13,56 +13,102 @@ reason below. Line numbers are part of the baseline key, so edits to a
 mutated file shift entries — confirm the verify task's paired stale/"new"
 rows are the shifted old ones before refreshing.
 
-Baselines seeded 2026-07-21 from the pre-existing survivor population;
-verified stable solo and multi-suite the same day. Rows not listed under a
-triage heading below are **untriaged debt made explicit, not acceptance** —
-the kill/triage pass is the next planned work.
+Both suites were fully triaged 2026-07-22: every remaining key has a reason
+below; there is no untriaged debt. The 2026-07-22 passes killed 6 keys (settlement-cache
+expiry branch and settler decode path via refactor + tests, the verifier's
+overrun-guard removal, the handlers comma-scan arithmetic, and the
+authority/source fee-payer fast path — refactored out as fully subsumed by
+the per-account scan below it, which returns the same error and payer) — see
+`SvmExactVerifierTest`'s corruption tests, `SvmExactSettlerTest`'s malformed
+payload tests, and `HandlerUtilTests.parseKeyListIgnoresCommaInEarlierParam`.
 
-## x402 suite (18 keys: 14 survived, 4 no_coverage)
+## x402 suite (13 keys: 11 survived, 2 no_coverage)
 
-### Triaged equivalent (carried from the 2026-07-17 pass)
+Context that drives most of the triage, established empirically 2026-07-22
+(see the corruption tests in `SvmExactVerifierTest`): `TransactionSkeleton`
+resolution is *asymmetric*. An out-of-range **program** index throws
+`ArrayIndexOutOfBoundsException` inside `parseInstructions` (eagerly caught
+by `verify`'s catch → `TRANSACTION_COULD_NOT_BE_DECODED`), while an
+out-of-range **account** index resolves silently to a `null` account, and a
+corrupted data length yields an overrunning slice without throwing. The
+committed `crash_*` corpus inputs pin both lazy shapes.
 
-**Error-funnel-redundant guards** — removing the guard reaches code that
-throws, and the surrounding `try/catch` maps the throw to the *same* error
-code the guard returns, so no caller can tell the difference:
+### Error-funnel-redundant guards — removal reaches code whose failure maps to the identical response
 
-- `SvmExactVerifier.verify` 45 (`RemoveConditionalMutator_EQUAL_ELSE`): the
-  `payload == null || payload.transaction() == null` guard; skipping it
-  reaches `Base64.decode(null)` → NPE → the identical
-  `INVALID_PAYLOAD_TRANSACTION` response.
+- `SvmExactVerifier.verify` 45 (`EQUAL_ELSE`): skipping the
+  `payload == null || transaction() == null` guard reaches
+  `Base64.decode(null)` → NPE → the same `INVALID_PAYLOAD_TRANSACTION`.
+- `verify` 83 (both directions) and 84 (`NullReturnVals`, `NO_COVERAGE`):
+  the null-program guard. A null program is **unreachable** — the parse
+  throws first (above) and the catch returns the same error the guard
+  would. The line-84 return is therefore uncoverable in-harness; what would
+  make it live is sava-core making program resolution lazy the way account
+  resolution is. Retained as defense in depth for exactly that case.
+- `verify` 87 (`EQUAL_IF` direction): removing the `account == null` check
+  sends the reachable null account into `account.publicKey()` — an NPE
+  *inside* the try → caught → the identical decode error.
 
-### Untriaged debt — `SURVIVED` (judgment calls pending)
+### Unreachable sub-states of live guards
 
-The up-front instruction-validation guards in `SvmExactVerifier.verify`
-(lines 83/87/93 both mutation directions, 136, 151), the settler's fee-payer
-guard (`SvmExactSettler.settle` 91), the settlement-cache expiry comparison
-(`SettlementCache.claim` 48), `verifyComputeLimit` 200 and the
-`verifyOptionalInstructions` reason-index arithmetic (244). The validation
-itself is load-bearing (see `AGENTS.md` — `TransactionSkeleton` resolves
-lazily, and the `crash_*` corpus inputs reach these guards), but the fuzz
-replay only asserts no-throw, which cannot distinguish these mutants; each
-needs either a unit test constructing a distinguishing transaction or a
-written equivalence reason here.
+- `verify` 87 (`EQUAL_ELSE` direction): a non-null account with a null
+  `publicKey()` never occurs — lazy resolution yields null accounts, never
+  null-key accounts. The live direction of this guard is pinned by
+  `unresolvableAccountIndexRejected`.
+- `verify` 93 (`ORDER_IF` ×2, `ConditionalsBoundary`): the skeleton never
+  produces a negative `offset` or `len`, and `offset == 0` is structurally
+  impossible (signatures precede the message). The *reachable* failure —
+  an overrunning slice — has its guard-removal killed by
+  `overrunningDataSliceRejected`.
+- `verify` 136 (`EQUAL_IF`): `TransferCheckedIxData.read` returns null only
+  for a null/empty array; it is always handed the full transaction bytes.
+  The discriminator half of the condition is killed by
+  `wrongTransferDiscriminator`.
+- `SvmExactSettler.settle` 95 (`EQUAL_IF`): `skeleton.feePayer()` cannot be
+  null for a transaction that passed verification (verified transactions
+  have a non-empty static account table; probed 2026-07-22 — even a zeroed
+  signer-count header still resolves a fee payer). The two live mismatch
+  directions are killed by the fee-payer mismatch tests.
 
-### Untriaged debt — `NO_COVERAGE` (mechanical test work, never "equivalent")
+### Killable only through a brittle coincidence
 
-- `SvmExactSettler.settle` 78 and 85: the `catch` fallbacks for
-  `transactionBytes()` / `deserializeSkeleton` failures — no test feeds the
-  settler a malformed payload.
-- `SettlementCache.claim` 51: the expired-claim replacement path — no test
-  crosses the retention boundary.
-- `SvmExactVerifier.verify` 84: the null-`programId.publicKey()` return — no
-  covering input.
+- `verify` `verifyComputeLimit` 197 (`ORDER_IF`): removing `len() < 1`
+  makes `discriminatorByte` read the byte adjacent to an empty data slice
+  (the next instruction's header). Distinguishing that requires pinning a
+  serialization coincidence — the adjacent byte happening to equal the
+  discriminator — which is a flaky harness by construction. The guard is
+  real defense for the raw `data()[offset()]` read.
 
-## handlers suite (5 keys, all `SURVIVED`)
+### Equivalent over the reachable domain
 
-All inside the hand-rolled multi-key `char[]` scan of
-`HandlerUtil.parsePublicKeyParams` (lines 30–42): `ConditionalsBoundaryMutator`
-off-by-one probes plus the `EmptyObjectReturnValsMutator`/`MathMutator`
-variants on the same scan. Documented 2026-07-17 as indistinguishable by a
-base58-length input; that claim predates the ratchet and has not been
-re-verified per key — treat as untriaged until each row gets a distinguishing
-test or a per-key reason here.
+- `verify` `verifyOptionalInstructions` 241 (`MathMutator`): in
+  `Math.min(i - 3, unknownReasons.length - 1)`, mutating `length - 1` to
+  `length + 1` is identity for the whole reachable domain `i ∈ {3, 4, 5}`
+  (rule 1 caps instructions at 6). The `i - 3` → `i + 3` variant is killed
+  by `unknownOptionalInstruction`.
+
+### Defensive re-parse
+
+- `SvmExactSettler.settle` 89 (`NullReturnVals`, `NO_COVERAGE`): the
+  `deserializeSkeleton` catch after a successful verify of the same bytes
+  cannot fire today (verify already deserialized them). Uncoverable
+  in-harness; would become live if a future verify overload stopped
+  parsing. The decode catch *above* verify is the live path, covered by
+  `malformedTransactionPayloadDoesNotSubmit` / `nullPayloadDoesNotSubmit`.
+
+## handlers suite (4 keys, all `SURVIVED`, all in `parsePublicKeyParams`)
+
+- Lines 30, 34 (`EmptyObjectReturnVals`): returning a fresh empty list
+  instead of the `NO_PARAMS` constant — equal but not identical, and the
+  API does not promise identity.
+- Line 38 (`ConditionalsBoundary`): `end < 0` → `<= 0` differs only at
+  `end == 0`, unreachable — `from` is past `indexOfParam` plus the
+  parameter text, so an `&` at index 0 cannot be found at or after it.
+- Line 42 (`ConditionalsBoundary`, 2 mutants, 1 key): `nextComma == 0` is
+  unreachable (the comma search starts a full key-length past `from`), and
+  `nextComma == end` is unreachable (the character at `end` is `&` or the
+  string end, never a comma). The scan's arithmetic itself is pinned by
+  `parseKeyListIgnoresCommaInEarlierParam`, which killed the line-41
+  `MathMutator` this pass.
 
 Shrinking a baseline is always an improvement; growing one requires a
 reason here.

@@ -40,17 +40,19 @@ public final class SettlementCache {
   }
 
   boolean claim(final String key, final long nowMillis) {
-    evictExpired(nowMillis);
+    final boolean claimed;
     final var previous = seen.putIfAbsent(key, nowMillis);
     if (previous == null) {
-      return true;
-    }
-    if (nowMillis - previous > retentionMillis) {
+      claimed = true;
+    } else if (nowMillis - previous > retentionMillis) {
       // The previous claim has expired; replace it and allow this attempt.
       seen.put(key, nowMillis);
-      return true;
+      claimed = true;
+    } else {
+      claimed = false;
     }
-    return false;
+    evictExpired(nowMillis);
+    return claimed;
   }
 
   /// @return whether the key is currently claimed (present and not expired).

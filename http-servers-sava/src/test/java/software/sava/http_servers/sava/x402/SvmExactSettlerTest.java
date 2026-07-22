@@ -274,6 +274,29 @@ final class SvmExactSettlerTest {
   }
 
   @Test
+  void malformedTransactionPayloadDoesNotSubmit() {
+    final var submitter = FakeSubmitter.ok("UNUSED");
+    final var payload = new PaymentPayload(2, null, null, "!!not base64!!");
+    final var response = settler(submitter).settle(payload, requirements(feePayer));
+
+    assertFalse(response.success());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, response.errorReason());
+    assertNull(response.payer());
+    assertEquals(X402.SOLANA_MAINNET, response.network());
+    assertEquals(0, submitter.sendCount, "must not submit an undecodable payload");
+  }
+
+  @Test
+  void nullPayloadDoesNotSubmit() {
+    final var submitter = FakeSubmitter.ok("UNUSED");
+    final var response = settler(submitter).settle(null, requirements(feePayer));
+
+    assertFalse(response.success());
+    assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, response.errorReason());
+    assertEquals(0, submitter.sendCount);
+  }
+
+  @Test
   void rpcSubmitterFactory() {
     assertNotNull(SvmExactSettler.TransactionSubmitter.rpc(
         null, software.sava.rpc.json.http.request.Commitment.CONFIRMED,

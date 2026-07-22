@@ -138,7 +138,6 @@ public final class SvmExactVerifier {
     }
 
     // TransferChecked accounts: [source, mint, destination, authority, ...].
-    final var source = transferAccounts.getFirst().publicKey();
     final var mint = transferAccounts.get(1).publicKey();
     final var destination = transferAccounts.get(2).publicKey();
     final var authority = transferAccounts.get(3).publicKey();
@@ -147,10 +146,8 @@ public final class SvmExactVerifier {
     final var payer = authority;
     final var feePayer = requirements.feePayer();
 
-    // Rule 2: Fee-payer safety.
-    if (feePayer.equals(authority) || feePayer.equals(source)) {
-      return VerifyResponse.invalid(X402Errors.FEE_PAYER_TRANSFERRING_FUNDS, payer);
-    }
+    // Rule 2: Fee-payer safety. The scan covers the transfer authority and source too —
+    // both are accounts of the transfer instruction.
     for (final var instruction : instructions) {
       for (final var account : instruction.accounts()) {
         if (feePayer.equals(account.publicKey())) {

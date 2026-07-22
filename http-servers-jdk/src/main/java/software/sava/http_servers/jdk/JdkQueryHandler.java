@@ -7,7 +7,11 @@ import software.sava.http_servers.core.response.QueryHandler;
 import java.io.IOException;
 import java.util.concurrent.Executor;
 
+import static java.lang.System.Logger.Level.ERROR;
+
 final class JdkQueryHandler implements HttpHandler {
+
+  private static final System.Logger logger = System.getLogger(JdkQueryHandler.class.getName());
 
   private final QueryHandler queryHandler;
   private final Executor executor; // null for blocking
@@ -36,16 +40,16 @@ final class JdkQueryHandler implements HttpHandler {
   @Override
   public void handle(final HttpExchange exchange) throws IOException {
     if (executor == null) {
+      // blocking: a RuntimeException propagates to JdkController's guard, which answers 500
       process(exchange);
     } else {
       executor.execute(() -> {
         try {
           process(exchange);
-        } catch (final IOException e) {
-          try {
-            exchange.sendResponseHeaders(500, -1);
-          } catch (final IOException ignored) {
-          }
+        } catch (final IOException | RuntimeException e) {
+          // the controller's frame is gone by now; an unanswered exchange would hang the client
+          logger.log(ERROR, "Failed to process request.", e);
+          JdkController.serverError(exchange);
         }
       });
     }

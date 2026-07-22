@@ -7,6 +7,7 @@ import software.sava.core.accounts.lookup.AddressLookupTable;
 import software.sava.core.accounts.meta.AccountMeta;
 import software.sava.core.tx.Instruction;
 import software.sava.core.tx.Transaction;
+import software.sava.core.tx.TransactionSkeleton;
 import software.sava.idl.clients.spl.associated_token.gen.AssociatedTokenPDAs;
 import software.sava.idl.clients.spl.token.gen.TokenProgram;
 
@@ -234,7 +235,7 @@ final class SvmExactVerifierTest {
 
   @Test
   void nullPayload() {
-    final var resp = VERIFIER.verify((PaymentPayload) null, requirements(null));
+    final var resp = VERIFIER.verify(null, requirements(null));
     assertFalse(resp.isValid());
     assertEquals(X402Errors.INVALID_PAYLOAD_TRANSACTION, resp.invalidReason());
   }
@@ -581,5 +582,54 @@ final class SvmExactVerifierTest {
   void emptyMemoRequirementIgnored() {
     final var resp = VERIFIER.verify(requirements(""), serialize(validInstructions()));
     assertTrue(resp.isValid(), () -> "got: " + resp.invalidReason());
+  }
+
+  // The skeleton resolves lazily, so single corrupted index/length bytes yield instructions
+  // with null programs, null accounts, or overrunning data slices instead of a deserialization
+  // failure. Each must be caught by verify's up-front validation, not by whatever rule check
+  // happens to dereference the hole first.
+
+  private static Instruction[] parsedInstructions(final byte[] tx) {
+    final var skeleton = TransactionSkeleton.deserializeSkeleton(tx);
+    return skeleton.parseInstructions(skeleton.parseAccounts());
+  }
+
+  private static byte[] corrupted(final byte[] tx, final int position, final byte value) {
+    final byte[] mutated = tx.clone();
+    mutated[position] = value;
+    return mutated;
+  }
+
+  @Test
+  void unresolvableProgramIndexRejected() {
+    final byte[] tx = serialize(validInstructions());
+    // instruction entry layout: [programIdIndex][numAccounts][accountIndices...][dataLen][data];
+    // ix0 has no accounts, so its program-index byte sits 3 bytes before its data slice
+    final int programIndexPosition = parsedInstructions(tx)[0].offset() - 3;
+    final var resp = VERIFIER.verify(requirements(null), corrupted(tx, programIndexPosition, (byte) 0x7F));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, resp.invalidReason());
+  }
+
+  @Test
+  void unresolvableAccountIndexRejected() {
+    final byte[] tx = serialize(validInstructions());
+    // the transfer instruction (ix2) has 4 account-index bytes ending just before its dataLen
+    // byte; corrupt the first of them (source) to an index beyond the account table
+    final int sourceIndexPosition = parsedInstructions(tx)[2].offset() - 1 - 4;
+    final var resp = VERIFIER.verify(requirements(null), corrupted(tx, sourceIndexPosition, (byte) 0x7F));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, resp.invalidReason());
+  }
+
+  @Test
+  void overrunningDataSliceRejected() {
+    final byte[] tx = serialize(validInstructions());
+    // inflate the transfer instruction's dataLen byte so its lazily-resolved slice overruns
+    // the end of the transaction bytes
+    final int dataLenPosition = parsedInstructions(tx)[2].offset() - 1;
+    final var resp = VERIFIER.verify(requirements(null), corrupted(tx, dataLenPosition, (byte) 100));
+    assertFalse(resp.isValid());
+    assertEquals(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, resp.invalidReason());
   }
 }

@@ -1,10 +1,8 @@
 package software.sava.http_servers.jetty;
 
-import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.server.Handler;
-import org.eclipse.jetty.util.Callback;
 
+/// Names the handler type this module's builder produces and [JettyController] routes to.
+/// CORS pre-flights are answered by the controller, not by handlers.
 public interface JettyHandler extends Handler {
-
-  boolean handlePreFlight(final HttpFields.Mutable responseHeaders, final Callback callback);
 }

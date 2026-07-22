@@ -31,9 +31,34 @@ module's `config/pitest/README.md`. The parts that bite most often:
   shared sava-build workflow; run the gate locally before deciding to release (with
   `-PnoMutationHistory` if arcmutate history is ever activated here). It is not the inner
   loop.
-- Suites: http-servers-core has `pitestHandlers` and `pitestWiring`; http-servers-sava has
-  `pitestX402` and `pitestHandlers`. The server-adapter modules (jdk/jetty/fusionauth/hello)
-  deliberately have none — they are thin wiring, covered by socket round-trip tests.
+- Suites: http-servers-core has `pitestHandlers`, `pitestWiring`, `pitestServer`,
+  `pitestResponse` and `pitestLogging`; http-servers-sava has `pitestX402` and
+  `pitestHandlers`; each adapter has a `pitestDispatch` (routing/error dispatch, killed
+  through socket round trips), and fusionauth additionally `pitestLoggerShim` — split out
+  because the framework's own threads log through the shim, so mutating it under socket
+  tests can wedge the server past PIT's timeout. The hello demo has `pitestHello`
+  (`HelloServerTests` boots the demo through ServiceLoader against all three backends);
+  every module is ratcheted. The adapters declare their `HttpServerBuilderFactory` both in
+  `module-info` and in `META-INF/services`, so discovery works on the classpath (including
+  PIT's minions) as well as the module path.
+  The jetty socket suite's handled-flag family flaps between detected and `SURVIVED`
+  under load; its baseline holds the union, so stale-entry warnings there are expected.
+- Every adapter has a `*PostHandlerTest` (happy paths, 405 + Allow) and a
+  `*ConformanceTest` pinning the parts of the `Request`/`HttpResponse` contract every
+  backend must agree on — the **raw** query string (documented on `Request.query()`;
+  `JdkRequest` decoded it until 2026-07-22, corrupting boundary scans on percent-encoded
+  delimiters), routing semantics (query-handler paths match exactly plus the
+  trailing-slash alias, path handlers match by prefix; the JDK adapter prefix-matched
+  everything through per-path jdk contexts until 2026-07-22, when `JdkController` moved to
+  the shared `HandlerMap` lookup from a single root context), 500 on a throwing handler
+  (the JDK adapter used to abort the connection from blocking handlers and hang the client
+  from non-blocking ones), custom status/header propagation (the x402 402-plus-header
+  shape), cached JSON responses, case-insensitive header lookup, the body-never-null
+  contract, and CORS pre-flight semantics (including that a blank
+  `Access-Control-Request-Method` is not a pre-flight) — registering the fusionauth suite found that
+  its pre-flight detection probed a lowercase-keyed header map with the canonical name
+  (pre-flights always 405'd) and omitted `Access-Control-Allow-Methods`; both fixed
+  2026-07-22.
 - A new unkilled mutant has exactly three legal outcomes: **kill it** with a test (prefer
   asserting the property it breaks over restating the implementation), **refactor** it out
   of existence, or **accept it** with a written reason in the module's
@@ -103,13 +128,25 @@ new code, not just new prose.
 The first code to touch every untrusted request: query-string parsing (`HandlerUtil`) and
 method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
 
-- `./gradlew :http-servers-core:pitestHandlers` — PIT over the three routing classes against
-  `handlers.*Test*`. 68 mutants; 1 accepted equivalent (triaged in `config/pitest/README.md`)
-  and 2 timed-out (stable in both run modes). Tests live in `HandlerUtilTests` and
-  `HandlerMapTests`.
+- `./gradlew :http-servers-core:pitestHandlers` — PIT over the `handlers` package (wildcard)
+  against `handlers.*Test*`. 69 mutants; 1 accepted equivalent (triaged in
+  `config/pitest/README.md`) and 2 timed-out (stable in both run modes). Tests live in
+  `HandlerUtilTests` and `HandlerMapTests`.
 - `./gradlew :http-servers-core:pitestWiring` — PIT over `BaseHandlerWiring` (the handler-group
   include/exclude filter that decides which handlers get registered) against
   `BaseHandlerWiringTests`. 78 mutants, **100% killed**, empty baseline — keep it that way.
+- `./gradlew :http-servers-core:pitestServer` — PIT over the `server` package except
+  `BaseHandlerWiring` (owned by `pitestWiring`), against `server.*Test*`. Covers the
+  builder's trailing-slash aliasing, method routing, controller snapshotting and the
+  factory service lookup and registration logging (`BaseHttpServerBuilderTests`).
+  38 mutants; 1 accepted entry.
+- `./gradlew :http-servers-core:pitestResponse` — PIT over the `response` package
+  (`HttpResponse` factories and `withHeader` copy semantics, `HttpResponseTests`).
+  9 mutants, **100% killed**, empty baseline — keep it that way.
+- `./gradlew :http-servers-core:pitestLogging` — PIT over `BaseJulLogger` against
+  `logging.*Test*`. The placeholder formatter and `stringify` are package-private and
+  asserted directly; emission and caller resolution are asserted through a capturing JUL
+  handler (`BaseJulLoggerTests`). 55 mutants; 5 accepted equivalents, 2 stable timed-out.
 
 `BaseHandlerWiring`'s include/exclude predicates must stay strict negations
 (`includeGroup == !excludeGroup`, `includePath == !excludePath`) across the full truth table;
@@ -131,13 +168,15 @@ sponsors, so this is the most heavily tested surface.
 - `./gradlew :http-servers-sava:pitestX402` — PIT over the whole `x402` package (models, gate,
   verifier, settler, cache) against `x402.*Test*`. The `RpcTransactionSubmitter` inner class
   (thin adapter over `SolanaRpcClient`, exercised only against a live node) and the `*Fuzz`
-  harnesses are excluded. 373 mutants, 94% detected; the baseline carries 18 keys —
-  1 triaged equivalent, the rest untriaged debt (14 survived judgment calls, 4 uncovered
-  lines) itemized in `config/pitest/README.md`, which is the next planned kill/triage pass.
+  harnesses are excluded. 367 mutants, 96% detected; the 13 baseline keys are all triaged
+  equivalents with per-key reasons in `config/pitest/README.md` — chiefly guards whose
+  removal funnels to the identical error response, and sub-states `TransactionSkeleton`'s
+  asymmetric lazy resolution cannot produce (out-of-range program indices throw eagerly;
+  account indices resolve to null; data lengths overrun silently — pinned by the
+  corruption tests in `SvmExactVerifierTest`).
 - `./gradlew :http-servers-sava:pitestHandlers` — PIT over `handlers.*` (public-key query
-  params) against `handlers.*Test*`. 43 mutants, 86% detected; the 5 baseline keys are all
-  probes inside the hand-rolled multi-key `char[]` scan of `parsePublicKeyParams`, treated
-  as untriaged until each gets a distinguishing test or a per-key reason (see
+  params) against `handlers.*Test*`. 43 mutants, 88% detected; the 4 baseline keys are
+  triaged equivalents (empty-list identity and unreachable scan boundaries — see
   `config/pitest/README.md`).
 - `./gradlew :http-servers-sava:fuzzSvmVerify -PmaxFuzzTime=<seconds>` — Jazzer over
   `SvmExactVerifyFuzz`, which feeds raw bytes to `SvmExactVerifier.verify(requirements, bytes)`
@@ -154,11 +193,15 @@ sponsors, so this is the most heavily tested surface.
 
 The up-front instruction validation in `SvmExactVerifier.verify` (non-null program, non-null
 accounts, in-bounds data slice, returning `TRANSACTION_COULD_NOT_BE_DECODED` otherwise) is
-load-bearing, not redundant: `TransactionSkeleton` resolves lazily, so a malformed body that
-still forms a valid header yields instructions with `null` programs/accounts or overrunning
-data slices, which the rule checks would otherwise dereference and throw past `verify`'s own
-`try/catch`. The `crash_*` inputs in the `svmVerify` corpus, replayed by
-`VerifyFuzzRegressionTest`, guard this.
+load-bearing, not redundant — but asymmetrically so. `TransactionSkeleton` resolution was
+probed 2026-07-22: an out-of-range *program* index throws eagerly inside `parseInstructions`
+(caught by `verify`'s own `try/catch`), while an out-of-range *account* index resolves
+silently to a `null` account and a corrupted data length yields a slice overrunning the
+transaction bytes — states the rule checks would otherwise dereference and throw past
+`verify`. The `crash_*` inputs in the `svmVerify` corpus (replayed by
+`VerifyFuzzRegressionTest`) and the corruption tests in `SvmExactVerifierTest`
+(`unresolvableProgramIndexRejected`, `unresolvableAccountIndexRejected`,
+`overrunningDataSliceRejected`) guard this.
 
 ### Adding a target
 

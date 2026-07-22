@@ -41,7 +41,7 @@ final class JdkPostHandlerTest {
 
     try (final var client = HttpClient.newHttpClient()) {
       final var postResponse = client.send(
-          HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/echo"))
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/echo"))
               .POST(HttpRequest.BodyPublishers.ofString("hello-post"))
               .build(),
           BodyHandlers.ofString()
@@ -50,7 +50,7 @@ final class JdkPostHandlerTest {
       assertEquals("POST:hello-post", postResponse.body());
 
       final var getResponse = client.send(
-          HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ping"))
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/ping"))
               .GET()
               .build(),
           BodyHandlers.ofString()
@@ -77,7 +77,7 @@ final class JdkPostHandlerTest {
 
     try (final var client = HttpClient.newHttpClient()) {
       final var getResponse = client.send(
-          HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/resource"))
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/resource"))
               .GET()
               .build(),
           BodyHandlers.ofString()
@@ -86,7 +86,7 @@ final class JdkPostHandlerTest {
       assertEquals("got:GET", getResponse.body());
 
       final var postResponse = client.send(
-          HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/resource"))
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/resource"))
               .POST(HttpRequest.BodyPublishers.ofString("payload"))
               .build(),
           BodyHandlers.ofString()
@@ -95,7 +95,7 @@ final class JdkPostHandlerTest {
       assertEquals("posted:payload", postResponse.body());
 
       final var deleteResponse = client.send(
-          HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/resource"))
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/resource"))
               .DELETE()
               .build(),
           BodyHandlers.ofString()

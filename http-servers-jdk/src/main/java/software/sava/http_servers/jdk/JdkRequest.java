@@ -26,7 +26,9 @@ final class JdkRequest implements Request {
 
   @Override
   public String query() {
-    return exchange.getRequestURI().getQuery();
+    // getQuery() percent-decodes, which would corrupt boundary scans downstream; the
+    // Request contract is the raw query string.
+    return exchange.getRequestURI().getRawQuery();
   }
 
   @Override

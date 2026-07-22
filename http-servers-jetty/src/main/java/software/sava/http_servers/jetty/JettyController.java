@@ -28,10 +28,17 @@ final class JettyController extends Handler.Sequence {
     try {
       final var path = request.getHttpURI().getCanonicalPath();
       final var requestHeaders = request.getHeaders();
-      final var preFlight = HttpMethod.OPTIONS.is(request.getMethod())
-          && requestHeaders.contains(HttpHeader.ACCESS_CONTROL_REQUEST_METHOD);
+      final String accessControlRequestMethod;
+      final boolean preFlight;
+      if (HttpMethod.OPTIONS.is(request.getMethod())) {
+        accessControlRequestMethod = requestHeaders.get(HttpHeader.ACCESS_CONTROL_REQUEST_METHOD);
+        preFlight = accessControlRequestMethod != null && !accessControlRequestMethod.isBlank();
+      } else {
+        accessControlRequestMethod = null;
+        preFlight = false;
+      }
       final var method = preFlight
-          ? requestHeaders.get(HttpHeader.ACCESS_CONTROL_REQUEST_METHOD)
+          ? accessControlRequestMethod
           : request.getMethod();
 
       final var lookup = handlerMap.lookupHandler(method, path);
@@ -63,8 +70,12 @@ final class JettyController extends Handler.Sequence {
           responseHeaders.put(HttpHeader.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
           // if pre-flight check.
           if (preFlight) {
+            // the requested method resolved to a handler, so it is allowed; browsers
+            // reject a pre-flight that does not name the method
+            responseHeaders.put(HttpHeader.ACCESS_CONTROL_ALLOW_METHODS, method);
             responseHeaders.put(HttpHeader.ACCESS_CONTROL_ALLOW_HEADERS, requestHeaders.get(HttpHeader.ACCESS_CONTROL_REQUEST_HEADERS));
-            return handler.handlePreFlight(responseHeaders, callback);
+            callback.succeeded();
+            return true;
           }
         }
         return handler.handle(request, response, callback);

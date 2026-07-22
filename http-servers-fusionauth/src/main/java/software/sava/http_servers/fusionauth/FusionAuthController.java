@@ -17,11 +17,19 @@ final class FusionAuthController implements HTTPHandler {
   @Override
   public void handle(final HTTPRequest request, final HTTPResponse response) throws Exception {
     final var path = request.getPath();
-    final var requestHeaders = request.getHeaders();
-    final var preFlight = HTTPMethod.OPTIONS.is(request.getMethod())
-        && requestHeaders.containsKey("Access-Control-Request-Method");
+    // getHeader is case-insensitive; the raw header map is keyed lowercase, so a
+    // containsKey probe with the canonical name would never match
+    final String accessControlRequestMethod;
+    final boolean preFlight;
+    if (HTTPMethod.OPTIONS.is(request.getMethod())) {
+      accessControlRequestMethod = request.getHeader("Access-Control-Request-Method");
+      preFlight = accessControlRequestMethod != null && !accessControlRequestMethod.isBlank();
+    } else {
+      accessControlRequestMethod = null;
+      preFlight = false;
+    }
     final var method = preFlight
-        ? request.getHeader("Access-Control-Request-Method")
+        ? accessControlRequestMethod
         : String.valueOf(request.getMethod());
 
     final var lookup = handlerMap.lookupHandler(method, path);
@@ -48,8 +56,10 @@ final class FusionAuthController implements HTTPHandler {
         response.setHeader("Access-Control-Allow-Origin", origin);
         // if pre-flight check.
         if (preFlight) {
+          // the requested method resolved to a handler, so it is allowed; without this
+          // header browsers reject the pre-flight
+          response.setHeader("Access-Control-Allow-Methods", method);
           response.setHeader("Access-Control-Allow-Headers", request.getHeader("Access-Control-Request-Headers"));
-          // return handler.handlePreFlight(responseHeaders, callback);
           return;
         }
       }

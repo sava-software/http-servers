@@ -1,0 +1,5 @@
+software.sava.http_servers.fusionauth.FusionAuthController,handle,26,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.fusionauth.FusionAuthController,handle,55,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.fusionauth.FusionAuthRequest,body,37,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
+software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
+software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_IF,SURVIVED

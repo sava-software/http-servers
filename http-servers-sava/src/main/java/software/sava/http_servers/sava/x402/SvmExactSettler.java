@@ -64,22 +64,26 @@ public final class SvmExactSettler {
   public SettlementResponse settle(final PaymentPayload payload, final PaymentRequirements requirements) {
     final var network = requirements == null ? null : requirements.network();
 
+    // A null payload, absent transaction or malformed Base64 all surface here as the same
+    // RuntimeException the verifier's payload overload would map to this reason.
+    final byte[] txBytes;
+    try {
+      txBytes = payload.transactionBytes();
+    } catch (final RuntimeException e) {
+      return SettlementResponse.failure(X402Errors.INVALID_PAYLOAD_TRANSACTION, network, null);
+    }
+
     // Step 1: never settle a payment that does not verify.
-    final var verifyResponse = verifier.verify(payload, requirements);
+    final var verifyResponse = verifier.verify(requirements, txBytes);
     if (!verifyResponse.isValid()) {
       return SettlementResponse.failure(verifyResponse.invalidReason(), network, verifyResponse.payer());
     }
     final var payer = verifyResponse.payer();
 
-    final byte[] txBytes;
-    try {
-      txBytes = payload.transactionBytes();
-    } catch (final RuntimeException e) {
-      return SettlementResponse.failure(X402Errors.INVALID_PAYLOAD_TRANSACTION, network, payer);
-    }
-
     final TransactionSkeleton skeleton;
     try {
+      // A verified transaction has already deserialized once inside verify, so this cannot fail
+      // today; the catch is retained as defense against a future verify overload that does not.
       skeleton = TransactionSkeleton.deserializeSkeleton(txBytes);
     } catch (final RuntimeException e) {
       return SettlementResponse.failure(X402Errors.INVALID_PAYLOAD_TRANSACTION, network, payer);

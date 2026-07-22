@@ -41,7 +41,7 @@ public class JettyServerBuilder extends BaseHttpServerBuilder<JettyHandler, Serv
 
   @Override
   protected HttpServer createServer(final Server server) {
-    return new JettyHttpSever(server);
+    return new JettyHttpServer(server);
   }
 
   @Override
@@ -51,22 +51,22 @@ public class JettyServerBuilder extends BaseHttpServerBuilder<JettyHandler, Serv
 
   @Override
   protected JettyHandler nonBlockingGet(final QueryHandler nonBlockingGetHandler) {
-    return JettyQueryHandler.createNonBlockingGetHandler(nonBlockingGetHandler);
+    return JettyQueryHandler.createNonBlockingHandler(nonBlockingGetHandler);
   }
 
   @Override
   protected JettyHandler blockingGet(final QueryHandler blockingGetHandler) {
-    return JettyQueryHandler.createBlockingGetHandler(blockingGetHandler);
+    return JettyQueryHandler.createBlockingHandler(blockingGetHandler);
   }
 
   @Override
   protected JettyHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
-    return JettyQueryHandler.createNonBlockingPostHandler(nonBlockingPostHandler);
+    return JettyQueryHandler.createNonBlockingHandler(nonBlockingPostHandler);
   }
 
   @Override
   protected JettyHandler blockingPost(final QueryHandler blockingPostHandler) {
-    return JettyQueryHandler.createBlockingPostHandler(blockingPostHandler);
+    return JettyQueryHandler.createBlockingHandler(blockingPostHandler);
   }
 
   @Override

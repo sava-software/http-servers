@@ -77,7 +77,6 @@ public class JdkServerBuilder extends BaseHttpServerBuilder<HttpHandler, HttpSer
 
   @Override
   protected void setController(final HttpServer server, final HandlerMap<HttpHandler> handlerMap) {
-    handlerMap.queryHandlerStream().forEach(entry -> server.createContext(entry.getKey(), new JdkController(entry.getValue())));
-    handlerMap.pathHandlerStream().forEach(entry -> server.createContext(entry.getKey(), new JdkController(entry.getValue())));
+    server.createContext("/", new JdkController(handlerMap));
   }
 }
