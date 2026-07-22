@@ -2,6 +2,7 @@ package software.sava.http_servers.jetty;
 
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpHeader;
+import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.util.Callback;
@@ -9,7 +10,7 @@ import software.sava.http_servers.core.response.QueryHandler;
 
 import java.nio.ByteBuffer;
 
-final class JettyQueryHandler extends BaseJettyHandler {
+final class JettyQueryHandler extends Handler.Abstract {
 
   private final QueryHandler queryHandler;
 
@@ -18,11 +19,11 @@ final class JettyQueryHandler extends BaseJettyHandler {
     this.queryHandler = queryHandler;
   }
 
-  static JettyHandler createBlockingHandler(final QueryHandler queryHandler) {
+  static Handler createBlockingHandler(final QueryHandler queryHandler) {
     return new JettyQueryHandler(InvocationType.BLOCKING, queryHandler);
   }
 
-  static JettyHandler createNonBlockingHandler(final QueryHandler queryHandler) {
+  static Handler createNonBlockingHandler(final QueryHandler queryHandler) {
     return new JettyQueryHandler(InvocationType.NON_BLOCKING, queryHandler);
   }
 

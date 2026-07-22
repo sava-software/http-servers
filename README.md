@@ -90,13 +90,15 @@ serves `/files/a/b`.
 
 `Request` exposes `method()`, `path()`, `query()`, `header(name)` and `body()`. The query string is
 **raw**: separators arrive as literal `&`, while a `&` or `=` that belongs to a value stays
-percent-encoded, so it can never be mistaken for a separator. Values themselves are not decoded —
-decode them at the call site if they may contain encoded characters. `query()` is `null` when the
-request has none, header lookup is case-insensitive, and `body()` is never `null`.
+percent-encoded, so it can never be mistaken for a separator. `query()` is `null` when the request
+has none, header lookup is case-insensitive, and `body()` is never `null`.
 
-`HandlerUtil` in `software.sava.http_servers.core.handlers` parses that raw string, matching a
+`HandlerUtil` in `software.sava.http_servers.core.handlers` parses that raw string. It matches a
 parameter only at a boundary — the start of the query or just after a `&` — so `page=` never
-matches inside `perpage=`.
+matches inside `perpage=`, splits structure before decoding so an encoded delimiter can never act
+as a separator, and percent-decodes each returned value (`%XX` escapes plus `+` as space). A
+malformed escape throws `IllegalArgumentException`. Anything reading `query()` directly gets the
+raw string and decodes for itself.
 
 `HttpResponse` carries a status code, content type, headers and a body, built through
 `HttpResponse.response(..)` and `HttpResponse.json(..)`. `withHeader(name, value)` returns a copy

@@ -1,5 +1,6 @@
 package software.sava.http_servers.jetty;
 
+import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.io.Content;
@@ -10,15 +11,15 @@ import org.eclipse.jetty.util.Callback;
 import software.sava.http_servers.core.handlers.HandlerMap;
 
 import static java.lang.System.Logger.Level.ERROR;
-import static software.sava.http_servers.jetty.BaseJettyHandler.JSON_CONTENT;
 
 final class JettyController extends Handler.Sequence {
 
+  static final HttpField JSON_CONTENT = new HttpField(HttpHeader.CONTENT_TYPE, "application/json");
   private static final System.Logger logger = System.getLogger(JettyController.class.getName());
 
-  private final HandlerMap<JettyHandler> handlerMap;
+  private final HandlerMap<Handler> handlerMap;
 
-  JettyController(final HandlerMap<JettyHandler> handlerMap) {
+  JettyController(final HandlerMap<Handler> handlerMap) {
     this.handlerMap = handlerMap;
   }
 

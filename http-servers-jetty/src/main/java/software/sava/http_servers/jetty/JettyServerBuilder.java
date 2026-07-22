@@ -4,6 +4,7 @@ import org.eclipse.jetty.compression.server.CompressionHandler;
 import org.eclipse.jetty.http2.server.HTTP2CServerConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
@@ -15,7 +16,7 @@ import software.sava.http_servers.core.server.HttpServer;
 
 import java.util.concurrent.Executor;
 
-public class JettyServerBuilder extends BaseHttpServerBuilder<JettyHandler, Server> {
+public class JettyServerBuilder extends BaseHttpServerBuilder<Handler, Server> {
 
   @Override
   protected Server initRestServer(final Executor executor, final String host, final int port) {
@@ -45,32 +46,32 @@ public class JettyServerBuilder extends BaseHttpServerBuilder<JettyHandler, Serv
   }
 
   @Override
-  protected JettyHandler cachedResponse(final CachedResponse cachedResponse) {
+  protected Handler cachedResponse(final CachedResponse cachedResponse) {
     return new JettyCachedJsonResponseHandler(cachedResponse);
   }
 
   @Override
-  protected JettyHandler nonBlockingGet(final QueryHandler nonBlockingGetHandler) {
+  protected Handler nonBlockingGet(final QueryHandler nonBlockingGetHandler) {
     return JettyQueryHandler.createNonBlockingHandler(nonBlockingGetHandler);
   }
 
   @Override
-  protected JettyHandler blockingGet(final QueryHandler blockingGetHandler) {
+  protected Handler blockingGet(final QueryHandler blockingGetHandler) {
     return JettyQueryHandler.createBlockingHandler(blockingGetHandler);
   }
 
   @Override
-  protected JettyHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
+  protected Handler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
     return JettyQueryHandler.createNonBlockingHandler(nonBlockingPostHandler);
   }
 
   @Override
-  protected JettyHandler blockingPost(final QueryHandler blockingPostHandler) {
+  protected Handler blockingPost(final QueryHandler blockingPostHandler) {
     return JettyQueryHandler.createBlockingHandler(blockingPostHandler);
   }
 
   @Override
-  protected void setController(final Server server, final HandlerMap<JettyHandler> handlerMap) {
+  protected void setController(final Server server, final HandlerMap<Handler> handlerMap) {
     final var controller = new JettyController(handlerMap);
     final var compressionHandler = new CompressionHandler(controller);
     server.setHandler(compressionHandler);

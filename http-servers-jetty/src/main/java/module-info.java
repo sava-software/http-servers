@@ -10,11 +10,11 @@ module software.sava.http_servers.jetty {
   requires static org.eclipse.jetty.compression.gzip;
 //  requires static org.eclipse.jetty.compression.brotli;
 //  requires static org.eclipse.jetty.compression.zstandard;
-  requires transitive org.eclipse.jetty.http;
+  requires org.eclipse.jetty.http;
   requires org.eclipse.jetty.http2.server;
   requires org.eclipse.jetty.io;
   requires transitive org.eclipse.jetty.server;
-  requires transitive org.eclipse.jetty.util;
+  requires org.eclipse.jetty.util;
 
   provides HttpServerBuilderFactory with JettyServerBuilderFactory;
 

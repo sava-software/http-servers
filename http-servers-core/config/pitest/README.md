@@ -20,10 +20,11 @@ triaged — there is no untriaged debt.
 
 ## handlers suite — 1 accepted equivalent
 
-`HandlerUtil.parseParam` line 27, `ConditionalsBoundaryMutator` on the
+`HandlerUtil.parseRawParam` line 37, `ConditionalsBoundaryMutator` on the
 `to < 0` sentinel: the `substring(from)` and `substring(from, to)` branches
 coincide when `to == from` (an empty value either way), so `<` → `<=` cannot
-change any result. Triaged 2026-07-17.
+change any result. Triaged 2026-07-17 (in `parseParam` before value decoding
+was added 2026-07-22 and structure extraction moved to `parseRawParam`).
 
 The suite also carries 2 `TIMED_OUT` mutants (infinite-loop conversions in
 the query scan). They count as detected and were observed `TIMED_OUT` in

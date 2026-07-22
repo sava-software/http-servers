@@ -104,6 +104,9 @@ final class HandlerUtilTests {
   void parseIntParamsMissingOrBlank() {
     assertNull(parseIntParams("x=3", "ids=", 4));
     assertNull(parseIntParams(null, "ids=", 4));
+    // the boundary-rejected match leaves residual text past the param length, which the
+    // absent-param guard must discard rather than parse
+    assertNull(parseIntParams("monkeys=1", "ids=", 4), "absent parameter");
     assertNull(parseIntParams("ids=", "ids=", 4));
     assertNull(parseIntParams("ids=&x=3", "ids=", 4));
   }
@@ -121,5 +124,42 @@ final class HandlerUtilTests {
     final var query = "size=10&page=2";
     assertEquals("2", parseParam(query, 8, "page="));
     assertEquals("10", parseParam(query, 0, "size="));
+  }
+
+  @Test
+  void valuesArePercentDecoded() {
+    assertEquals("a&b", parseParam("v=a%26b", "v="));
+    assertEquals("x=y", parseParam("v=x%3Dy", "v="));
+    assertEquals("hello world", parseParam("v=hello%20world", "v="));
+    assertEquals("hello world", parseParam("v=hello+world", "v="), "'+' decodes to a space");
+    assertEquals("caf\u00e9", parseParam("v=caf%C3%A9", "v="), "multi-byte UTF-8 escapes");
+  }
+
+  @Test
+  void encodedSeparatorsDoNotSplitStructure() {
+    // %26 inside a value must not act as a parameter separator...
+    assertEquals("a&admin=true", parseParam("owner=a%26admin%3Dtrue", "owner="));
+    // ...so the injected parameter is not visible
+    assertFalse(parseBoolParam("owner=a%26admin%3Dtrue", "admin="));
+    // and %2C inside a list element must not act as an element separator
+    final var ex = assertThrows(NumberFormatException.class, () -> parseIntParams("ids=1%2C2", "ids=", 2));
+    assertTrue(ex.getMessage().contains("1,2"), ex.getMessage());
+  }
+
+  @Test
+  void listElementsAreDecodedIndividually() {
+    assertArrayEquals(new int[]{1, 22, 3}, parseIntParams("ids=%31,2%32,3", "ids=", 4));
+  }
+
+  @Test
+  void decodedParamsFeedTheTypedParsers() {
+    assertTrue(parseBoolParam("flag=%74rue", "flag="));
+    assertEquals(42, parseIntParam("n=%34%32", "n="));
+  }
+
+  @Test
+  void malformedEscapeThrows() {
+    assertThrows(IllegalArgumentException.class, () -> parseParam("v=%zz", "v="));
+    assertThrows(IllegalArgumentException.class, () -> parseParam("v=abc%2", "v="));
   }
 }
