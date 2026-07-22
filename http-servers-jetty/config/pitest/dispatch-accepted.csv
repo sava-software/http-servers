@@ -8,7 +8,6 @@ software.sava.http_servers.jetty.JettyController,handle,82,BooleanTrueReturnVals
 software.sava.http_servers.jetty.JettyController,handle,86,VoidMethodCallMutator,SURVIVED
 software.sava.http_servers.jetty.JettyController,handle,88,BooleanFalseReturnValsMutator,SURVIVED
 software.sava.http_servers.jetty.JettyQueryHandler,handle,43,BooleanFalseReturnValsMutator,SURVIVED
-software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,24,VoidMethodCallMutator,SURVIVED
 software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,29,VoidMethodCallMutator,SURVIVED
 software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,34,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
 software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,35,VoidMethodCallMutator,SURVIVED

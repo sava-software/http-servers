@@ -18,6 +18,15 @@ Baselines seeded 2026-07-21 (`handlers`, `wiring`) and 2026-07-22 (`server`,
 was verified stable solo and multi-suite on its seeding day. All entries are
 triaged — there is no untriaged debt.
 
+## Mutator overrides
+
+`handlers` and `logging` run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` (trialed
+2026-07-22: +5 and +7 mutants respectively, all killed by existing tests —
+dropped `String` slicing, list building and `StringBuilder.append` chains are
+receiver-returning calls the default set cannot express). The other suites
+trialed nothing extra: their mutated code has no receiver-returning calls for
+`NAKED_RECEIVER` to fire on.
+
 ## handlers suite — 1 accepted equivalent
 
 `HandlerUtil.parseRawParam` line 37, `ConditionalsBoundaryMutator` on the

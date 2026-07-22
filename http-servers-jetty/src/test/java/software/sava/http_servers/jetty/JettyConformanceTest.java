@@ -391,4 +391,48 @@ final class JettyConformanceTest {
           "the origin is still reflected on simple requests");
     }
   }
+
+  @Test
+  void blockingHandlersRunOnTheProvidedExecutor() throws Exception {
+    final var dispatches = new java.util.concurrent.atomic.AtomicInteger();
+    final var delegate = Executors.newVirtualThreadPerTaskExecutor();
+    final java.util.concurrent.Executor recording = command -> {
+      dispatches.incrementAndGet();
+      delegate.execute(command);
+    };
+
+    final var builder = new JettyServerBuilderFactory().createBuilder();
+    builder.blockingQueryHandler("/b", request -> HttpResponse.response("text/plain", "b"));
+    final int port = freePort();
+    builder.createServer(recording, "localhost", port).start();
+
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("b", get(client, port, "/b").body());
+    }
+    org.junit.jupiter.api.Assertions.assertTrue(dispatches.get() > 0,
+        "the executor handed to createServer must receive work");
+  }
+
+  @Test
+  void errorResponsesAreJson() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/simple", request -> HttpResponse.response("text/plain", "body")));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var notFound = get(client, port, "/nowhere");
+      assertEquals(404, notFound.statusCode());
+      assertEquals("application/json", notFound.headers().firstValue("Content-Type").orElse(null));
+      org.junit.jupiter.api.Assertions.assertTrue(notFound.body().contains("msg"), notFound.body());
+
+      final var wrongMethod = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/simple"))
+              .timeout(Duration.ofSeconds(10))
+              .method("DELETE", HttpRequest.BodyPublishers.noBody())
+              .build(),
+          BodyHandlers.ofString());
+      assertEquals(405, wrongMethod.statusCode());
+      assertEquals("application/json", wrongMethod.headers().firstValue("Content-Type").orElse(null));
+      org.junit.jupiter.api.Assertions.assertTrue(wrongMethod.body().contains("msg"), wrongMethod.body());
+    }
+  }
 }

@@ -25,5 +25,9 @@ hardening {
     targetClasses = listOf("software.sava.http_servers.jetty.*")
     excludedClasses = listOf("software.sava.http_servers.jetty.*Test*")
     targetTests = "software.sava.http_servers.jetty.*Test*"
+    // NAKED_RECEIVER: jetty's HttpFields.Mutable.put returns the receiver, so
+    // VoidMethodCallMutator never fires on header writes; this makes them expressible.
+    // Trial 2026-07-22: +10 mutants, all killed (2 needed errorResponsesAreJson).
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
 }

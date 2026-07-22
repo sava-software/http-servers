@@ -29,8 +29,9 @@ module's `config/pitest/README.md`. The parts that bite most often:
 - **The full `qualityGate` — every suite, serialized, diffed against `config/pitest/` — is
   the pre-release check, owned by the local release checklist.** CI runs `check` via the
   shared sava-build workflow; run the gate locally before deciding to release (with
-  `-PnoMutationHistory` if arcmutate history is ever activated here). It is not the inner
-  loop.
+  `-PnoMutationHistory` if arcmutate history is ever activated here), alongside long fuzz
+  runs — `fuzz<Target> -PmaxFuzzTime=<seconds>` on every registered harness. It is not the
+  inner loop.
 - Suites: http-servers-core has `pitestHandlers`, `pitestWiring`, `pitestServer`,
   `pitestResponse` and `pitestLogging`; http-servers-sava has `pitestX402` and
   `pitestHandlers`; each adapter has a `pitestDispatch` (routing/error dispatch, killed
@@ -110,9 +111,10 @@ module's `config/pitest/README.md`. The parts that bite most often:
   The daemon log (`~/.gradle/daemon/<version>/daemon-<pid>.out.log`) keeps a failed
   build's full output even when the shell discarded it.
 - Fuzz findings become a committed seed input **and** a named regression test, never just
-  a fix — and both committed corpora are replayed by unit tests inside `check`
-  (`VerifyFuzzRegressionTest`, `PayloadFuzzRegressionTest`), so a new seed replays
-  automatically and the corpus cannot rot between fuzz runs.
+  a fix — and every committed corpus is replayed by a unit test inside `check`
+  (`VerifyFuzzRegressionTest`, `PayloadFuzzRegressionTest`,
+  `HandlerUtilFuzzRegressionTests`), so a new seed replays automatically and the corpus
+  cannot rot between fuzz runs.
 - **When one thing has two representations, fuzz the differential.** The existing
   harnesses assert agreement (direct-JSON vs Base64-header parse; the gate's total 402/200
   contract), not just absence of crashes — keep new harnesses to that bar.
@@ -155,8 +157,11 @@ method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
 Query param lookup must match only at a parameter boundary (query start or after `&`), never
 as a substring (`page=` must not match inside `perpage=`) — use `indexOfParam`, not
 `query.indexOf`. Applies to both this module's `HandlerUtil` and `http-servers-sava`'s
-`handlers.HandlerUtil`. No fuzz harness here: a query-string splitter's boundaries all live in
-tiny inputs the unit tests reach directly.
+`handlers.HandlerUtil`. `./gradlew :http-servers-core:fuzzHandlerUtil` runs a differential
+harness (`HandlerUtilFuzz`): the hand-rolled boundary scanner against a naive split-based
+reference, required to agree on every input — value, absence, integers, or exception class —
+because since value decoding landed the parser is no longer just a splitter. Seeds live under
+`src/test/resources/fuzz/handlerUtil` and are replayed by `HandlerUtilFuzzRegressionTests`.
 
 ### http-servers-sava — x402 payment gate (`software.sava.http_servers.sava.x402`)
 

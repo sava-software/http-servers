@@ -69,7 +69,10 @@ Killed by pinning rather than accepted: the pre-flight detection conditions
   default is already false; the call is explicit documentation. (Its
   `setSendServerVersion` sibling defaults *on* and is killed.)
 
-Note that Jetty's `HttpFields.Mutable.put` returns `Mutable` rather than
-`void`, so `VoidMethodCallMutator` never fires on a header write here. Header
-writes are therefore invisible to this suite's mutator set — the duplicate
-pre-flight write removed above was found by reading, not by a survivor.
+Jetty's `HttpFields.Mutable.put` returns `Mutable` rather than `void`, so
+`VoidMethodCallMutator` never fires on a header write. The suite therefore
+runs `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` (trialed 2026-07-22: +10 mutants,
+8 killed immediately, 2 exposed the untested `Content-Type` on 404/405 error
+bodies — killed by `errorResponsesAreJson`). Header writes are now
+expressible; the duplicate pre-flight write removed earlier had to be found
+by reading precisely because they were not.
