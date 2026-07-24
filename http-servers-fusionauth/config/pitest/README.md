@@ -31,12 +31,12 @@ Also killed by pinning: `ResponseUtil.setContentLength` (explicit
 `Content-Length` asserted on cached responses); two dead `writeResponse`
 overloads were deleted outright.
 
-- `FusionAuthController` 26 (`EQUAL_IF` on the blank-ACRM check): treating a
+- `# blank-ACRM funnel` — `FusionAuthController` 26 (`EQUAL_IF`): treating a
   blank `Access-Control-Request-Method` as a pre-flight looks up method `" "`,
   which no handler map contains — the same 405 + Allow the non-pre-flight
   path returns. The non-blank contract itself is pinned by
   `blankRequestMethodHeaderIsNotAPreflight`.
-- `FusionAuthController` 55 (`EQUAL_IF` on `origin != null`): forcing the
+- `# null-origin no-op` — `FusionAuthController` 55 (`EQUAL_IF` on `origin != null`): forcing the
   branch with a null origin calls `setHeader(ACAO, null)`, a no-op; the
   no-Origin pre-flight sub-case has no well-defined semantics to pin
   (mirrors the Jetty controller's equivalent row).
@@ -48,7 +48,7 @@ overloads were deleted outright.
   `FusionAuthHttpServer.start` captures the shim's SEVERE record
   (thread-filtered) and rethrows — a port probe cannot attribute a listening
   socket to this server.
-- `FusionAuthRequest.body` 37 (`EQUAL_ELSE`): the `null -> empty array`
+- `# defensive fallback` — `FusionAuthRequest.body` 37 (`EQUAL_ELSE`): the `null -> empty array`
   guard's null side is unreachable — java-http hands back an empty body for
   body-less requests (the guarded contract itself is pinned by
   `bodyOnAGetRequestIsEmptyNotNull`). Defensive, retained.

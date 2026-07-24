@@ -58,7 +58,7 @@ Killed by pinning rather than accepted: the pre-flight detection conditions
 work on the provided executor deterministically; killed via a recording
 executor 2026-07-22).
 
-- **Handled-flag family** (`JettyController` 67/79/82/88,
+- **`# handled-flag family`** (`JettyController` 67/79/82/88,
   `JettyQueryHandler.handle` 43, `JettyCachedJsonResponseHandler.handle` 28):
   mutants on the boolean a `Handler.handle` returns. Every return sits after
   the response is committed (`Content.Sink.write` / `response.write` /
@@ -70,18 +70,18 @@ executor 2026-07-22).
   the occupied `localhost` address makes a wildcard bind dodge the conflict
   and skip the expected throw — the second observer the acceptance said
   required another network interface.
-- `JettyController` 36 (`EQUAL_IF` on the blank-ACRM check): treating a blank
+- `# blank-ACRM funnel` — `JettyController` 36 (`EQUAL_IF`): treating a blank
   `Access-Control-Request-Method` as a pre-flight looks up method `" "`, which
   no handler map contains — the same 405 + Allow the non-pre-flight path
   returns. The non-blank contract itself is pinned by
   `blankRequestMethodHeaderIsNotAPreflight`.
-- `JettyController` 70 (`EQUAL_IF` on `origin != null`): forcing the branch
+- `# null-origin no-op` — `JettyController` 70 (`EQUAL_IF` on `origin != null`): forcing the branch
   with a null origin makes `put(ACCESS_CONTROL_ALLOW_ORIGIN, null)` — a
   header *remove*, i.e. a no-op. The divergent sub-case (a pre-flight
   without an Origin header) has no well-defined semantics to pin.
-- `JettyController` 86 (`setStatus(500)` removal in the catch):
+- `# error funnel` — `JettyController` 86 (`setStatus(500)` removal in the catch):
   `callback.failed(throwable)` on the next line produces the same 500.
-- **Compliance-backstop family** (`JettyController` 52 `EQUAL_ELSE` on the
+- **`# compliance backstop`** family (`JettyController` 52 `EQUAL_ELSE` on the
   `badRequest()` check, 56–58 `NO_COVERAGE` in the 400 branch): the shared
   `HandlerMap` refuses ambiguous paths (encoded separators, encoded dot
   segments, double-encoding, empty segments — see core's `PathCanonicalizer`),
@@ -93,7 +93,8 @@ executor 2026-07-22).
   in-process controller harness with a faked `Request`/`Response` pair (the
   named escape for all four rows). The jdk and fusionauth twins of this
   branch are live and killed by `ambiguousPathsAreRefused`.
-- `JettyServerBuilder` 29 (`setSendXPoweredBy(false)` removal): the flag's
+- `# explicit-default doc` — `JettyServerBuilder` 29 (`setSendXPoweredBy(false)`
+  removal): the flag's
   default is already false; the call is explicit documentation. (Its
   `setSendServerVersion` sibling defaults *on* and is killed.)
 

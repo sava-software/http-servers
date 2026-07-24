@@ -27,7 +27,7 @@ Dropped `String` slicing, list building and `StringBuilder.append` chains are
 receiver-returning calls the default set cannot express). `wiring` and
 `response` fired nothing in either measurement — nothing to enable.
 
-## handlers suite — 1 accepted equivalent
+## handlers suite — 1 accepted equivalent (`# empty-value coincidence`)
 
 `HandlerUtil.parseRawParam` line 37, `ConditionalsBoundaryMutator` on the
 `to < 0` sentinel: the `substring(from)` and `substring(from, to)` branches
@@ -64,8 +64,8 @@ The registration-breadcrumb `VoidMethodCallMutator`s (`addQueryHandler`,
 "registrations are observable in ops logs" contract is pinned, not
 accepted.
 
-- `HttpServerBuilderFactory.findFirst` 10 (`NullReturnVals`,
-  `NO_COVERAGE`): the return is reachable only with a service provider on
+- `# provider-path unreachable in-harness` — `HttpServerBuilderFactory.findFirst` 10
+  (`NullReturnVals`, `NO_COVERAGE`): the return is reachable only with a service provider on
   the module path. **Unreachable in-harness**: core ships no provider, the
   gradlex whitebox test module cannot add a `provides` clause, and a
   `META-INF/services` registration would resolve under PIT's classpath
@@ -84,15 +84,17 @@ and tested directly; a redundant escape-look-ahead condition
 (`i + 2 <= len` subsumed by `i + 1 < len`) was refactored out during
 seeding rather than accepted. The remainder:
 
-- `formatPlaceholders` 61 (`MathMutator`): `len << 2` StringBuilder
-  capacity — allocation-size only, never what is computed.
+- `# allocation-size only` — `formatPlaceholders` 61 (`MathMutator`): `len << 2`
+  StringBuilder capacity — sizes the allocation, never what is computed.
+- `# identical-output` family — `log` 26, `logFormat` 38 and `stringify` 93 below all
+  produce byte-identical output through the mutated route.
 - `log` 26 (`EQUAL_ELSE`): forcing the null-throwable case through the
   throwable `logp` overload passes `(Throwable) null`, which produces a
   `LogRecord` identical to the message-only overload's.
 - `logFormat` 38 (`EQUAL_ELSE`): routing an empty values array into
   `formatPlaceholders` leaves every placeholder intact — byte-identical
   output to the raw-emit fast path it bypassed.
-- `resolveCaller` 51 (`EQUAL_ELSE`): the null-frame fallback fires only if
+- `# defensive fallback` — `resolveCaller` 51 (`EQUAL_ELSE`): the null-frame fallback fires only if
   every remaining stack frame belongs to the logger class, which no test
   call chain can arrange — there is always a caller frame beneath the
   wrappers. Defensive fallback, retained.

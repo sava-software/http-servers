@@ -42,7 +42,7 @@ out-of-range **account** index resolves silently to a `null` account, and a
 corrupted data length yields an overrunning slice without throwing. The
 committed `crash_*` corpus inputs pin both lazy shapes.
 
-### Error-funnel-redundant guards — removal reaches code whose failure maps to the identical response
+### `# error funnel` — removal reaches code whose failure maps to the identical response
 
 - `SvmExactVerifier.verify` 45 (`EQUAL_ELSE`): skipping the
   `payload == null || transaction() == null` guard reaches
@@ -57,7 +57,7 @@ committed `crash_*` corpus inputs pin both lazy shapes.
   sends the reachable null account into `account.publicKey()` — an NPE
   *inside* the try → caught → the identical decode error.
 
-### Unreachable sub-states of live guards
+### `# unreachable sub-state` — unreachable sub-states of live guards
 
 - `verify` 87 (`EQUAL_ELSE` direction): a non-null account with a null
   `publicKey()` never occurs — lazy resolution yields null accounts, never
@@ -78,7 +78,7 @@ committed `crash_*` corpus inputs pin both lazy shapes.
   signer-count header still resolves a fee payer). The two live mismatch
   directions are killed by the fee-payer mismatch tests.
 
-### Killable only through a brittle coincidence
+### `# brittle coincidence` — killable only through a serialization coincidence
 
 - `verify` `verifyComputeLimit` 197 (`ORDER_IF`): removing `len() < 1`
   makes `discriminatorByte` read the byte adjacent to an empty data slice
@@ -87,7 +87,7 @@ committed `crash_*` corpus inputs pin both lazy shapes.
   discriminator — which is a flaky harness by construction. The guard is
   real defense for the raw `data()[offset()]` read.
 
-### Equivalent over the reachable domain
+### `# reachable-domain identity` — equivalent over the reachable domain
 
 - `verify` `verifyOptionalInstructions` 241 (`MathMutator`): in
   `Math.min(i - 3, unknownReasons.length - 1)`, mutating `length - 1` to
@@ -95,7 +95,7 @@ committed `crash_*` corpus inputs pin both lazy shapes.
   (rule 1 caps instructions at 6). The `i - 3` → `i + 3` variant is killed
   by `unknownOptionalInstruction`.
 
-### Defensive re-parse
+### `# defensive re-parse`
 
 - `SvmExactSettler.settle` 89 (`NullReturnVals`, `NO_COVERAGE`): the
   `deserializeSkeleton` catch after a successful verify of the same bytes
@@ -110,9 +110,10 @@ Line 42 holds two sibling `ConditionalsBoundary` mutants — one row per
 sibling since the 2026-07-24 multiset upgrade; the duplicate rows carry no
 `# label` (notes key on row text).
 
-- Lines 30, 34 (`EmptyObjectReturnVals`): returning a fresh empty list
+- `# equal-not-identical` — lines 30, 34 (`EmptyObjectReturnVals`): returning a fresh empty list
   instead of the `NO_PARAMS` constant — equal but not identical, and the
   API does not promise identity.
+- `# scan-boundary unreachable` — lines 38 and 42 (`ConditionalsBoundary`).
 - Line 38 (`ConditionalsBoundary`): `end < 0` → `<= 0` differs only at
   `end == 0`, unreachable — `from` is past `indexOfParam` plus the
   parameter text, so an `&` at index 0 cannot be found at or after it.

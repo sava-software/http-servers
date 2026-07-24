@@ -15,7 +15,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 
 ## Quality gate & mutation ratchet
 
-<!-- hardening-template sha256:cdac2e3852a9 -->
+<!-- hardening-template sha256:7f9eb869ee7e -->
 
 Full policy: sava-build's `HARDENING.md`. Each `pitest<Suite>` run diffs its unkilled
 mutants against the accepted baseline in the module's `config/pitest/<suite>-accepted.csv`
@@ -104,6 +104,13 @@ module's `config/pitest/README.md`. The parts that bite most often:
   kills, and PIT re-runs the suite per mutant, so one real wait costs minutes. Exploration
   belongs to the fuzz targets. Time-dependent code takes a clock seam; give test clocks a
   non-zero origin.
+- **Stubs and fixtures return distinguishable, non-default values.** A stub returning
+  null/0/""/true/empty makes the matching return-value mutant equivalent by accident of
+  the fixture — the clock non-zero-origin rule generalized to every stubbed return.
+- **Copy-on-write clusters split by direction.** Assert immutability of returned
+  collections (`assertThrows(UnsupportedOperationException, ...)`) at every size: the
+  mutable-escape direction is a kill, not an acceptance; only the content-equal siblings
+  are family-accepted equivalents.
 - **Do not rely on PIT's timeout to detect a mutant.** `TIMED_OUT` counts as detected and
   is load-dependent — the same mutant can report `SURVIVED` alone and `TIMED_OUT` under
   `qualityGate`. Verify a changed baseline in both modes; union only rows observed to flip,
