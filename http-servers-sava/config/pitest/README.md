@@ -30,8 +30,13 @@ slicing are receiver-returning calls the default set cannot express).
 ## x402 suite (13 keys / 14 rows: 12 survived, 2 no_coverage)
 
 `verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
-the 2026-07-24 multiset upgrade; sibling rows are identical text and
-deliberately carry no `# label` (notes key on row text).
+the 2026-07-24 multiset upgrade. Both twins carry the **same** label
+(`# unreachable sub-state`, hand-written 2026-07-24): notes key on row text,
+so identical twins must stay identical. A label on only one twin — or two
+different labels — collides on reload (the note map is keyed by row text, so
+the last line parsed wins and then spreads to both on the next refresh),
+which is why the tooling never auto-labels siblings; matching labels are the
+only safe hand-edit, and they keep the rows out of the `unlabeled` count.
 
 Context that drives most of the triage, established empirically 2026-07-22
 (see the corruption tests in `SvmExactVerifierTest`): `TransactionSkeleton`
@@ -107,8 +112,9 @@ committed `crash_*` corpus inputs pin both lazy shapes.
 ## handlers suite (4 keys / 5 rows, all `SURVIVED`, all in `parsePublicKeyParams`)
 
 Line 42 holds two sibling `ConditionalsBoundary` mutants — one row per
-sibling since the 2026-07-24 multiset upgrade; the duplicate rows carry no
-`# label` (notes key on row text).
+sibling since the 2026-07-24 multiset upgrade. Both twins carry the same
+`# scan-boundary unreachable` label (hand-written 2026-07-24); see the x402
+README's note on why sibling labels must match rather than be left off.
 
 - `# equal-not-identical` — lines 30, 34 (`EmptyObjectReturnVals`): returning a fresh empty list
   instead of the `NO_PARAMS` constant — equal but not identical, and the

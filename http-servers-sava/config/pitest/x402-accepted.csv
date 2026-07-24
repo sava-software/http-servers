@@ -8,7 +8,7 @@ software.sava.http_servers.sava.x402.SvmExactVerifier,verify,84,NullReturnValsMu
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,87,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # unreachable sub-state
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,87,RemoveConditionalMutator_EQUAL_IF,SURVIVED # error funnel
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,93,ConditionalsBoundaryMutator,SURVIVED # unreachable sub-state
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,93,RemoveConditionalMutator_ORDER_IF,SURVIVED
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,93,RemoveConditionalMutator_ORDER_IF,SURVIVED
+software.sava.http_servers.sava.x402.SvmExactVerifier,verify,93,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable sub-state
+software.sava.http_servers.sava.x402.SvmExactVerifier,verify,93,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable sub-state
 software.sava.http_servers.sava.x402.SvmExactVerifier,verifyComputeLimit,197,RemoveConditionalMutator_ORDER_IF,SURVIVED # brittle coincidence
 software.sava.http_servers.sava.x402.SvmExactVerifier,verifyOptionalInstructions,241,MathMutator,SURVIVED # reachable-domain identity

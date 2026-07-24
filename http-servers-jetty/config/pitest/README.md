@@ -20,7 +20,21 @@ Measured 2026-07-24 (`pitestModeSnapshot` solo + gate, `pitestModeCompare`):
 two rows flipped across modes, both already insured — `JettyQueryHandler` 43
 (gate=KILLED, solo=SURVIVED) and `JettyServerBuilder` 29 (same directions;
 the "explicit documentation" acceptance is also load-flappy). Zero uninsured
-flips anywhere in the repo. **Removal criterion for the union rows** (per
+flips anywhere in the repo.
+
+**Cycle 2, 2026-07-24 (pre-release check):** a *third* row flipped —
+`JettyController` 96 (`BooleanFalseReturnVals`), gate=KILLED / solo=SURVIVED,
+already insured by its membership in the union; `pitestModeCompare` reported
+0 uninsured flips, 0 unioned now, 1 already insured. It now carries the same
+`(flip insurance: …)` parenthetical as rows 43 and 29. Which member of the
+handled-flag family flips is itself load-dependent — do not read a quiet run
+on one row as the family settling. **The 3-quiet-cycle counter is therefore
+still at 0**: no cycle has yet observed the family detected in both modes.
+The `1 stale entries` notice a gate run prints is this flip, not rot — the
+row survives in solo mode, so pruning it makes the next solo run fail the
+ratchet with an unexplained `SURVIVED`.
+
+**Removal criterion for the union rows** (per
 HARDENING.md, written when the union is written): drop a union row only when
 its cause is removed — handlers no longer returning the handled flag after
 committing the response, or Jetty ceasing to ignore it — or after 3
