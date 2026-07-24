@@ -1,5 +1,31 @@
 # Changelog
 
+## [25.2.0](https://github.com/sava-software/http-servers/compare/25.1.1...25.2.0) (2026-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **servers:** Servers now throw exceptions on port binding failures, enforcing stricter startup guarantees. Consume logs and handle exceptions accordingly.
+* **core:** Routing now uses canonicalized paths. Malformed or ambiguous paths will result in a 400 response. Consumers must migrate to use valid canonical paths.
+* `JettyHandler` and `BaseJettyHandler` are removed. `JettyServerBuilder` now extends `BaseHttpServerBuilder<Handler, Server>`; subclasses overriding its factory methods must return `org.eclipse.jetty .server.Handler`. `BaseJettyHandler.JSON_CONTENT` was package-private-ized onto `JettyController` and is no longer part of the public API. Consumers relying on `org.eclipse.jetty.http` or `org.eclipse.jetty.util` arriving transitively through this module must now require them directly.
+* http-servers-jdk query handlers no longer prefix-match; register a path handler where prefix routing is wanted. Request.query() on that backend returns the raw query string, so values arrive percent-encoded as they already did on the other backends — decode them at the call site. RootJettyHandler is removed.
+
+### Features
+
+* **core:** add PathCanonicalizer for canonical routing ([f811789](https://github.com/sava-software/http-servers/commit/f811789470e3b8248503a9e217f84ea6800ee2b4))
+
+
+### Bug Fixes
+
+* correct request routing, query decoding, and CORS pre-flight ([430e6d0](https://github.com/sava-software/http-servers/commit/430e6d0839fa3674806b3e95da51d323f73c9665))
+* percent-decode query values; drop the Jetty handler marker types ([eec306c](https://github.com/sava-software/http-servers/commit/eec306c06b26bfc2a68e4ebc22a3c4f34b02ebe0))
+* **servers:** retry port binding on race, enforce listener start contracts ([595909f](https://github.com/sava-software/http-servers/commit/595909fed2d5aad304425adeeda3af07bebd5992))
+
+
+### Miscellaneous Chores
+
+* release 25.2.0 ([e617bcb](https://github.com/sava-software/http-servers/commit/e617bcb4f784003ba5f36eefd493a2d99a25403c))
+
 ## [25.1.1](https://github.com/sava-software/http-servers/compare/25.1.0...25.1.1) (2026-06-27)
 
 
