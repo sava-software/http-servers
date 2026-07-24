@@ -10,7 +10,7 @@ Never refresh with `-PupdateMutationBaseline` just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
 reason below.
 
-## dispatch suite (2 keys, both `SURVIVED`) — seeded 2026-07-22
+## dispatch suite — no accepted mutants (since 2026-07-24)
 
 Registered when `JdkController` gained real routing logic (the shared
 `HandlerMap` dispatch that fixed jdk-context prefix matching). The covering
@@ -26,11 +26,10 @@ were killed 2026-07-22: the failure-path tests capture the JUL records and
 assert the thrown exception is logged — "failures are never silent" is
 pinned, not accepted.
 
-- `JdkServerBuilder.initRestServer` 34 (`EQUAL_IF`/`EQUAL_ELSE`, one
-  direction each): forcing the host-absent branch binds the wildcard
-  address instead of the requested host. The wildcard serves a superset
-  that includes loopback, so every in-process client still connects;
-  distinguishing it requires probing a second network interface, which is
-  environment-dependent. The other two directions — forcing the host
-  branch on a null/blank host — throw and are killed by
-  `absentHostBindsAllInterfaces`.
+The wildcard-bind family (`initRestServer` 34, both skip-directions) was
+accepted 2026-07-22 as "distinguishable only from a second network
+interface" — falsified 2026-07-24: `startOnAnOccupiedPortThrows` occupies
+the requested `localhost` address, so binding the wildcard instead dodges
+the conflict and the expected bind failure never happens. The occupied
+port is the second observer the acceptance said did not exist; the
+baseline is now empty — keep it that way.

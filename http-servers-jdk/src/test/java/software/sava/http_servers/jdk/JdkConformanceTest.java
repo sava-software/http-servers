@@ -14,6 +14,8 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Pins the parts of the core Request/HttpResponse contract that every backend must agree
 /// on: the raw query string, 500 on a throwing handler (never a hang or connection abort),
@@ -31,9 +33,7 @@ final class JdkConformanceTest {
       throws Exception {
     final var builder = new JDKHttpServerBuilderFactory().createBuilder();
     register.accept(builder);
-    final int port = freePort();
-    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", port).start();
-    return port;
+    return start(builder);
   }
 
   private static java.net.http.HttpResponse<String> get(final HttpClient client, final int port, final String pathAndQuery)
@@ -365,10 +365,14 @@ final class JdkConformanceTest {
       final var response = rawGet(port, target);
       assertEquals(400, rawStatus(response), target + " -> " + response);
     }
-    // an empty segment never reaches the controller: the jdk server finds no context
-    // for "//" targets and answers 404 itself
+    // an empty segment never reaches the controller, but the jdk server's own verdict is
+    // JDK-build-dependent ("//echo" parses as an authority-form target): 25.0.2 finds no
+    // context and answers 404, 25.0.4 rejects the request URI outright with 400. Pin the
+    // library-level invariant — refused before routing — not the JDK's choice of status.
     final var emptySegment = rawGet(port, "//echo");
-    assertEquals(404, rawStatus(emptySegment), emptySegment);
+    final int status = rawStatus(emptySegment);
+    assertTrue(status == 400 || status == 404, emptySegment);
+    assertFalse(emptySegment.contains("QH"), "an empty-segment target must never route: " + emptySegment);
   }
 
   @Test
@@ -407,6 +411,27 @@ final class JdkConformanceTest {
       builder.blockingQueryHandler("/same", request ->
           HttpResponse.response(304, "text/plain", new byte[0]));
     });
+    // the adapter must speak the bodyless-status contract itself (contentLen -1), not be
+    // corrected by the jdk server — the correction logs this warning
+    final var corrections = new java.util.concurrent.CopyOnWriteArrayList<java.util.logging.LogRecord>();
+    final var serverLogger = java.util.logging.Logger.getLogger("com.sun.net.httpserver");
+    final var capture = new java.util.logging.Handler() {
+      @Override
+      public void publish(final java.util.logging.LogRecord record) {
+        if (String.valueOf(record.getMessage()).contains("forcing contentLen")) {
+          corrections.add(record);
+        }
+      }
+
+      @Override
+      public void flush() {
+      }
+
+      @Override
+      public void close() {
+      }
+    };
+    serverLogger.addHandler(capture);
     try (final var client = HttpClient.newHttpClient()) {
       final var noContent = get(client, port, "/gone");
       assertEquals(204, noContent.statusCode());
@@ -415,6 +440,10 @@ final class JdkConformanceTest {
       final var notModified = get(client, port, "/same");
       assertEquals(304, notModified.statusCode());
       assertEquals("", notModified.body());
+      assertTrue(corrections.isEmpty(),
+          "the jdk server had to force contentLen for a bodyless status: " + corrections.size());
+    } finally {
+      serverLogger.removeHandler(capture);
     }
   }
 
@@ -455,4 +484,44 @@ final class JdkConformanceTest {
     }
   }
 
+  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
+  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
+  /// propagates untouched.
+  private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
+    final var executor = Executors.newVirtualThreadPerTaskExecutor();
+    for (int attempt = 0; ; ++attempt) {
+      final int port = freePort();
+      try {
+        builder.createServer(executor, "localhost", port).start();
+        return port;
+      } catch (final Exception e) {
+        if (attempt == 2 || !lostThePortRace(e)) {
+          throw e;
+        }
+      }
+    }
+  }
+
+  private static boolean lostThePortRace(final Throwable thrown) {
+    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// A server that cannot bind must throw — never report success and hold a dead server.
+  /// (java-http itself logs-and-returns on a bind failure; the adapter's listener probe
+  /// converts that into the throw this case pins.)
+  @Test
+  void startOnAnOccupiedPortThrows() throws Exception {
+    try (final var occupant = new ServerSocket(0, 50, java.net.InetAddress.getByName("localhost"))) {
+      final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/x", request -> HttpResponse.response("text/plain", "x"));
+      org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+          () -> builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", occupant.getLocalPort()).start(),
+          "a server that cannot bind must throw, never report success silently");
+    }
+  }
 }

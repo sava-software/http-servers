@@ -34,10 +34,7 @@ final class JettyPostHandlerTest {
     builder.nonBlockingQueryHandler("/ping", request -> HttpResponse.response("text/plain", request.method())
     );
 
-    final int port = freePort();
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    final var server = builder.createServer(executor, "localhost", port);
-    server.start();
+    final int port = start(builder);
 
     try (final var client = HttpClient.newHttpClient()) {
       final var postResponse = client.send(
@@ -70,10 +67,7 @@ final class JettyPostHandlerTest {
       return HttpResponse.response("text/plain", "posted:" + body);
     });
 
-    final int port = freePort();
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    final var server = builder.createServer(executor, "localhost", port);
-    server.start();
+    final int port = start(builder);
 
     try (final var client = HttpClient.newHttpClient()) {
       final var getResponse = client.send(
@@ -105,5 +99,32 @@ final class JettyPostHandlerTest {
       assertTrue(allow.contains("GET"), allow);
       assertTrue(allow.contains("POST"), allow);
     }
+  }
+
+  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
+  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
+  /// propagates untouched.
+  private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
+    final var executor = Executors.newVirtualThreadPerTaskExecutor();
+    for (int attempt = 0; ; ++attempt) {
+      final int port = freePort();
+      try {
+        builder.createServer(executor, "localhost", port).start();
+        return port;
+      } catch (final Exception e) {
+        if (attempt == 2 || !lostThePortRace(e)) {
+          throw e;
+        }
+      }
+    }
+  }
+
+  private static boolean lostThePortRace(final Throwable thrown) {
+    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
+        return true;
+      }
+    }
+    return false;
   }
 }

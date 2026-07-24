@@ -20,7 +20,7 @@ to `VoidMethodCall` because java-http's config API is fluent — killed by
 `frameworkLoggingFlowsThroughTheJulShim`, which pins that java-http's own
 logging surfaces through JUL).
 
-## dispatch suite (5 keys, all `SURVIVED`) — seeded 2026-07-22
+## dispatch suite (3 keys, all `SURVIVED`) — seeded 2026-07-22
 
 Registering this suite (with `FusionAuthConformanceTest`) found and fixed two
 real pre-flight defects: detection used `containsKey` with the canonical
@@ -40,11 +40,14 @@ overloads were deleted outright.
   branch with a null origin calls `setHeader(ACAO, null)`, a no-op; the
   no-Origin pre-flight sub-case has no well-defined semantics to pin
   (mirrors the Jetty controller's equivalent row).
-- `FusionAuthServerBuilder.initRestServer` 23 (both surviving directions):
-  `InetAddress.getByName(null)` resolves to loopback, which serves the same
-  local clients the wildcard bind does; the wildcard direction is the usual
-  superset. The throwing direction (blank host forced into `getByName`) is
-  killed by `absentHostBindsAllInterfaces`.
+- The former wildcard-bind rows (`FusionAuthServerBuilder.initRestServer`
+  23, both directions) were killed 2026-07-24 by `startOnAnOccupiedPortThrows`
+  (the occupied `localhost` address distinguishes which address the listener
+  binds), which also pins the never-silent start contract: java-http's
+  `start()` logs bind failures instead of throwing, so
+  `FusionAuthHttpServer.start` captures the shim's SEVERE record
+  (thread-filtered) and rethrows — a port probe cannot attribute a listening
+  socket to this server.
 - `FusionAuthRequest.body` 37 (`EQUAL_ELSE`): the `null -> empty array`
   guard's null side is unreachable — java-http hands back an empty body for
   body-less requests (the guarded contract itself is pinned by

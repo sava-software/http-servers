@@ -66,9 +66,18 @@ final class JdkQueryHandler implements HttpHandler {
     }
 
     final var body = httpResponse.body();
-    exchange.sendResponseHeaders(httpResponse.statusCode(), body.length);
-    try (exchange; final var os = exchange.getResponseBody()) {
-      os.write(body);
+    final int statusCode = httpResponse.statusCode();
+    if (statusCode == 204 || statusCode == 304) {
+      // bodyless statuses take contentLen -1; any other value makes the jdk server force
+      // -1 itself and log a warning about the correction
+      try (exchange) {
+        exchange.sendResponseHeaders(statusCode, -1);
+      }
+    } else {
+      exchange.sendResponseHeaders(statusCode, body.length);
+      try (exchange; final var os = exchange.getResponseBody()) {
+        os.write(body);
+      }
     }
   }
 }

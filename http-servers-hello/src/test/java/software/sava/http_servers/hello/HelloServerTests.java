@@ -37,8 +37,7 @@ final class HelloServerTests {
   @ParameterizedTest
   @ValueSource(strings = {"JDKHttpServerBuilderFactory", "JettyServerBuilderFactory", "FusionAuthBuilderFactory"})
   void helloServesAndExcludedPathDoesNot(final String factoryName) throws Exception {
-    final int port = freePort();
-    assertNotNull(HelloServer.start(factoryName, "localhost", port));
+    final int port = startRetrying(factoryName);
 
     try (final var client = HttpClient.newHttpClient()) {
       final var hello = get(client, port, "/hello");
@@ -76,5 +75,27 @@ final class HelloServerTests {
     assertEquals(200, response.statusCode());
     assertEquals("application/json", response.contentType());
     assertTrue(new String(response.body()).contains("\"message\": \"Hello\""));
+  }
+
+  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
+  /// with a fresh port when the loser's bind fails.
+  private static int startRetrying(final String factoryName) throws Exception {
+    for (int attempt = 0; ; ++attempt) {
+      final int port = freePort();
+      try {
+        assertNotNull(HelloServer.start(factoryName, "localhost", port));
+        return port;
+      } catch (final Exception e) {
+        boolean lostThePortRace = false;
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+          if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
+            lostThePortRace = true;
+          }
+        }
+        if (attempt == 2 || !lostThePortRace) {
+          throw e;
+        }
+      }
+    }
   }
 }

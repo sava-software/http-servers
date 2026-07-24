@@ -34,9 +34,7 @@ final class JettyConformanceTest {
       throws Exception {
     final var builder = new JettyServerBuilderFactory().createBuilder();
     register.accept(builder);
-    final int port = freePort();
-    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", port).start();
-    return port;
+    return start(builder);
   }
 
   private static java.net.http.HttpResponse<String> get(final HttpClient client, final int port, final String pathAndQuery)
@@ -550,4 +548,44 @@ final class JettyConformanceTest {
     }
   }
 
+  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
+  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
+  /// propagates untouched.
+  private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
+    final var executor = Executors.newVirtualThreadPerTaskExecutor();
+    for (int attempt = 0; ; ++attempt) {
+      final int port = freePort();
+      try {
+        builder.createServer(executor, "localhost", port).start();
+        return port;
+      } catch (final Exception e) {
+        if (attempt == 2 || !lostThePortRace(e)) {
+          throw e;
+        }
+      }
+    }
+  }
+
+  private static boolean lostThePortRace(final Throwable thrown) {
+    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// A server that cannot bind must throw — never report success and hold a dead server.
+  /// (java-http itself logs-and-returns on a bind failure; the adapter's listener probe
+  /// converts that into the throw this case pins.)
+  @Test
+  void startOnAnOccupiedPortThrows() throws Exception {
+    try (final var occupant = new ServerSocket(0, 50, java.net.InetAddress.getByName("localhost"))) {
+      final var builder = new JettyServerBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/x", request -> HttpResponse.response("text/plain", "x"));
+      org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+          () -> builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", occupant.getLocalPort()).start(),
+          "a server that cannot bind must throw, never report success silently");
+    }
+  }
 }

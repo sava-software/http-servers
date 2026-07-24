@@ -4,11 +4,8 @@ Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
 run's unkilled mutants against the accepted baseline in `<suite>-accepted.csv`
 and **fails on anything new**. Full policy lives in sava-build's `HARDENING.md`.
 
-## dispatch suite (17 keys / 18 rows: 15 survived, 3 no_coverage) — seeded 2026-07-22
+## dispatch suite (15 keys / 15 rows: 12 survived, 3 no_coverage) — seeded 2026-07-22
 
-Line 34 holds two sibling `EQUAL_ELSE` mutants of the compound host guard —
-one row per sibling since the 2026-07-24 multiset upgrade; sibling rows are
-identical text and deliberately carry no `# label` (notes key on row text).
 The 2026-07-24 canonical-routing contract added the compliance-backstop
 family below (the only `NO_COVERAGE` rows in the suite).
 
@@ -68,10 +65,11 @@ executor 2026-07-22).
   `callback.succeeded()`), and Jetty ignores the handled flag once the
   response is committed — the wire response is identical either way. These are
   the rows observed to flip under load.
-- **Wildcard-bind family** (`JettyServerBuilder.initRestServer` 34 both
-  skip-directions, 35 `setHost` removal): not setting the connector host
-  binds the wildcard address, a superset that still serves loopback clients;
-  distinguishable only from a second network interface.
+- The former wildcard-bind family (`initRestServer` 34 both skip-directions,
+  35 `setHost` removal) was killed 2026-07-24 by `startOnAnOccupiedPortThrows`:
+  the occupied `localhost` address makes a wildcard bind dodge the conflict
+  and skip the expected throw — the second observer the acceptance said
+  required another network interface.
 - `JettyController` 36 (`EQUAL_IF` on the blank-ACRM check): treating a blank
   `Access-Control-Request-Method` as a pre-flight looks up method `" "`, which
   no handler map contains — the same 405 + Allow the non-pre-flight path
