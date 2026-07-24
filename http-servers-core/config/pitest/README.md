@@ -20,12 +20,12 @@ triaged — there is no untriaged debt.
 
 ## Mutator overrides
 
-`handlers` and `logging` run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` (trialed
-2026-07-22: +5 and +7 mutants respectively, all killed by existing tests —
-dropped `String` slicing, list building and `StringBuilder.append` chains are
-receiver-returning calls the default set cannot express). The other suites
-trialed nothing extra: their mutated code has no receiver-returning calls for
-`NAKED_RECEIVER` to fire on.
+`handlers`, `logging` and `server` run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER`
+(trialed 2026-07-22: +5 and +7 mutants on handlers/logging; re-measured with
+`pitestMutatorTrial` 2026-07-24: +1 on server — all killed by existing tests.
+Dropped `String` slicing, list building and `StringBuilder.append` chains are
+receiver-returning calls the default set cannot express). `wiring` and
+`response` fired nothing in either measurement — nothing to enable.
 
 ## handlers suite — 1 accepted equivalent
 
@@ -35,9 +35,15 @@ coincide when `to == from` (an empty value either way), so `<` → `<=` cannot
 change any result. Triaged 2026-07-17 (in `parseParam` before value decoding
 was added 2026-07-22 and structure extraction moved to `parseRawParam`).
 
-The suite also carries 2 `TIMED_OUT` mutants (infinite-loop conversions in
-the query scan). They count as detected and were observed `TIMED_OUT` in
-**both** solo and multi-suite runs — not unioned into the baseline; if one
+The 2026-07-24 canonical-routing contract grew the suite to 160 mutants
+(`PathCanonicalizer`, the `HandlerLookup.badRequest()` state and the
+canonicalize-first `HandlerMapImpl` lookup, killed by
+`PathCanonicalizerTests`, the `HandlerMapTests` canonical/ambiguous cases
+and the generated `PathCanonicalizerFuzzSeedReplayTest`); a redundant
+empty-segments early return was refactored out rather than accepted during
+that pass. The suite carries 3 `TIMED_OUT` mutants (infinite-loop
+conversions in the query and path scans). They count as detected and were
+observed `TIMED_OUT` across runs — not unioned into the baseline; if one
 flips to `SURVIVED`, verify the flip in both modes before adding it.
 
 ## wiring suite — no accepted mutants
@@ -66,8 +72,10 @@ accepted.
   minions but not under the module-path `test` task — a mode-dependent
   harness. What would reach it: a blackbox integration test module with its
   own descriptor. The throwing path is pinned by
-  `findFirstThrowsWhenNoBackendIsOnThePath`; the provider path is exercised
-  end-to-end by the adapter modules' round-trip tests.
+  `findFirstThrowsWhenNoBackendIsOnThePath`; the success path is pinned
+  end-to-end (2026-07-24) by hello's `findFirstDiscoversABackend`, which
+  runs `findFirst` with all three providers on the path — the row stays
+  `NO_COVERAGE` only because that test lives outside this suite.
 
 ## logging suite — 5 accepted entries
 

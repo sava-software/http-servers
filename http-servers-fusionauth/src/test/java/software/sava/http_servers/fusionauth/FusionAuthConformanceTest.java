@@ -353,4 +353,150 @@ final class FusionAuthConformanceTest {
           "the origin is still reflected on simple requests");
     }
   }
+
+  /// Raw-socket GET so the request target crosses the wire exactly as written — HttpClient
+  /// normalizes or refuses the ambiguous targets these cases exist to pin.
+  private static String rawGet(final int port, final String requestTarget) throws Exception {
+    try (final var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(10_000);
+      final var out = socket.getOutputStream();
+      out.write(("GET " + requestTarget + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+          .getBytes(StandardCharsets.US_ASCII));
+      out.flush();
+      return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+    }
+  }
+
+  private static int rawStatus(final String response) {
+    return Integer.parseInt(response.substring(9, 12));
+  }
+
+  @Test
+  void ambiguousPathsAreRefused() throws Exception {
+    final int port = serve(builder -> {
+      builder.blockingQueryHandler("/echo", request -> HttpResponse.response("text/plain", "QH"));
+      builder.blockingPathHandler("/files/", request -> HttpResponse.response("text/plain", "PH:" + request.path()));
+    });
+    for (final var target : new String[]{
+        "/files%2F..%2Fecho", "/files/%2e%2e/echo", "/files/a\\b", "/a%2541", "/echo/../../echo", "//echo"}) {
+      final var response = rawGet(port, target);
+      assertEquals(400, rawStatus(response), target + " -> " + response);
+    }
+  }
+
+  @Test
+  void dotSegmentsAndBenignEscapesRouteCanonically() throws Exception {
+    final int port = serve(builder -> {
+      builder.blockingQueryHandler("/echo", request -> HttpResponse.response("text/plain", "QH"));
+      builder.blockingPathHandler("/files/", request -> HttpResponse.response("text/plain", "PH:" + request.path()));
+    });
+    final var resolved = rawGet(port, "/files/../echo");
+    assertEquals(200, rawStatus(resolved), resolved);
+    org.junit.jupiter.api.Assertions.assertTrue(resolved.contains("QH"),
+        "dot segments must resolve to the canonical target before routing: " + resolved);
+
+    final var decoded = rawGet(port, "/%65cho");
+    assertEquals(200, rawStatus(decoded), decoded);
+    org.junit.jupiter.api.Assertions.assertTrue(decoded.contains("QH"),
+        "benign escapes must decode before routing: " + decoded);
+  }
+
+  @Test
+  void handlerSeesTheRawPath() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingPathHandler("/files/", request ->
+            HttpResponse.response("text/plain", "PH:" + request.path())));
+    final var response = rawGet(port, "/files/%61bc");
+    assertEquals(200, rawStatus(response), response);
+    org.junit.jupiter.api.Assertions.assertTrue(response.contains("PH:/files/%61bc"),
+        "canonicalization decides routing only; the handler-visible path stays raw: " + response);
+  }
+
+  @Test
+  void noContentAndNotModifiedCrossTheWireWithoutABody() throws Exception {
+    final int port = serve(builder -> {
+      builder.blockingQueryHandler("/gone", request ->
+          HttpResponse.response(204, "text/plain", new byte[0]));
+      builder.blockingQueryHandler("/same", request ->
+          HttpResponse.response(304, "text/plain", new byte[0]));
+    });
+    try (final var client = HttpClient.newHttpClient()) {
+      final var noContent = get(client, port, "/gone");
+      assertEquals(204, noContent.statusCode());
+      assertEquals("", noContent.body());
+
+      final var notModified = get(client, port, "/same");
+      assertEquals(304, notModified.statusCode());
+      assertEquals("", notModified.body());
+    }
+  }
+
+  @Test
+  void largeBodyRoundTrips() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryPost("/big", request ->
+            HttpResponse.response("application/octet-stream", request.body())));
+    final byte[] payload = new byte[512 * 1024];
+    for (int i = 0; i < payload.length; ++i) {
+      payload[i] = (byte) (i * 31);
+    }
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/big"))
+              .timeout(Duration.ofSeconds(10))
+              .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+              .build(),
+          BodyHandlers.ofByteArray());
+      assertEquals(200, response.statusCode());
+      assertArrayEquals(payload, response.body(), "the body must round-trip byte-identical");
+    }
+  }
+
+  @Test
+  void headIsMethodNotAllowedWithAllow() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/echo", request -> HttpResponse.response("text/plain", "QH")));
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/echo"))
+              .timeout(Duration.ofSeconds(10))
+              .method("HEAD", HttpRequest.BodyPublishers.noBody())
+              .build(),
+          BodyHandlers.ofString());
+      assertEquals(405, response.statusCode(), "HEAD is not derived from GET; routing is explicit");
+      assertEquals("GET", response.headers().firstValue("Allow").orElse(null));
+    }
+  }
+
+  /// The JUL logger-shim installation is load-bearing configuration: java-http's own
+  /// start-up logging must surface through JUL (the shim is the only reason it does).
+  @Test
+  void frameworkLoggingFlowsThroughTheJulShim() throws Exception {
+    final var records = new java.util.concurrent.CopyOnWriteArrayList<java.util.logging.LogRecord>();
+    final var jul = java.util.logging.Logger.getLogger("io.fusionauth.http.server.HTTPServer");
+    final var handler = new java.util.logging.Handler() {
+      @Override
+      public void publish(final java.util.logging.LogRecord record) {
+        records.add(record);
+      }
+
+      @Override
+      public void flush() {
+      }
+
+      @Override
+      public void close() {
+      }
+    };
+    jul.addHandler(handler);
+    try {
+      serve(builder ->
+          builder.blockingQueryHandler("/ping", request -> HttpResponse.response("text/plain", "pong")));
+      org.junit.jupiter.api.Assertions.assertTrue(
+          records.stream().anyMatch(record -> String.valueOf(record.getMessage()).contains("Starting the HTTP server")),
+          "java-http must log through the JUL shim; captured records: " + records.size());
+    } finally {
+      jul.removeHandler(handler);
+    }
+  }
 }

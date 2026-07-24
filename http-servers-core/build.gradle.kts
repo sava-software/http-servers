@@ -4,6 +4,7 @@ plugins {
 
 testModuleInfo {
   requires("org.junit.jupiter.api")
+  requires("org.junit.jupiter.params")
   runtimeOnly("org.junit.jupiter.engine")
 }
 
@@ -27,6 +28,13 @@ hardening {
     maxLen = 256
     seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/formatPlaceholders")
   }
+  fuzz.register("pathCanonicalizer") {
+    // generative oracle: token streams carry their own expected canonical form; arbitrary
+    // bytes probe never-throws and the no-uncanonical-segment properties routing relies on
+    targetClass = "software.sava.http_servers.core.handlers.PathCanonicalizerFuzz"
+    maxLen = 256
+    seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/pathCanonicalizer")
+  }
   fuzz.register("handlerUtil") {
     // differential: the hand-rolled boundary scanner against a naive split-based reference;
     // query strings are small and unstructured enough for from-scratch mutation, the seeds
@@ -49,6 +57,8 @@ hardening {
       "software.sava.http_servers.core.server.BaseHandlerWiring"
     )
     targetTests = "software.sava.http_servers.core.server.*Test*"
+    // Trial 2026-07-24: +1 receiver-returning call, killed by existing tests.
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
   mutation.register("response") {
     // response factories and header-copy semantics

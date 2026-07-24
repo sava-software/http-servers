@@ -25,12 +25,16 @@ final class JdkController implements HttpHandler {
 
   @Override
   public void handle(final HttpExchange exchange) throws IOException {
-    final var lookup = handlerMap.lookupHandler(exchange.getRequestMethod(), exchange.getRequestURI().getPath());
+    // getPath() percent-decodes, which would let an encoded traversal reach a prefix
+    // handler decoded; routing canonicalization is owned by the shared HandlerMap
+    final var lookup = handlerMap.lookupHandler(exchange.getRequestMethod(), exchange.getRequestURI().getRawPath());
     final var handler = lookup.handler();
     if (handler == null) {
       final var allowedMethods = lookup.allowedMethods();
       try (exchange) {
-        if (allowedMethods == null) {
+        if (lookup.badRequest()) {
+          exchange.sendResponseHeaders(400, -1);
+        } else if (allowedMethods == null) {
           exchange.sendResponseHeaders(404, -1);
         } else {
           exchange.getResponseHeaders().set("Allow", allowedMethods);

@@ -1,5 +1,5 @@
-software.sava.http_servers.fusionauth.FusionAuthController,handle,26,RemoveConditionalMutator_EQUAL_IF,SURVIVED
-software.sava.http_servers.fusionauth.FusionAuthController,handle,55,RemoveConditionalMutator_EQUAL_IF,SURVIVED
-software.sava.http_servers.fusionauth.FusionAuthRequest,body,37,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
-software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
-software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.fusionauth.FusionAuthController,handle,26,RemoveConditionalMutator_EQUAL_IF,SURVIVED # blank-ACRM funnel
+software.sava.http_servers.fusionauth.FusionAuthController,handle,61,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op
+software.sava.http_servers.fusionauth.FusionAuthRequest,body,37,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive fallback
+software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # wildcard-bind family
+software.sava.http_servers.fusionauth.FusionAuthServerBuilder,initRestServer,23,RemoveConditionalMutator_EQUAL_IF,SURVIVED # wildcard-bind family

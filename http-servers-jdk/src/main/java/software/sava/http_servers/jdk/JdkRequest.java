@@ -21,7 +21,8 @@ final class JdkRequest implements Request {
 
   @Override
   public String path() {
-    return exchange.getRequestURI().getPath();
+    // getPath() percent-decodes; the Request contract is the raw path, matching query()
+    return exchange.getRequestURI().getRawPath();
   }
 
   @Override

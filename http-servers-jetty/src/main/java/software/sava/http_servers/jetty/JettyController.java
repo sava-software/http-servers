@@ -27,7 +27,10 @@ final class JettyController extends Handler.Sequence {
   public boolean handle(final Request request, final Response response, final Callback callback) {
     final var responseHeaders = response.getHeaders();
     try {
-      final var path = request.getHttpURI().getCanonicalPath();
+      // the raw as-received path: getCanonicalPath() has already percent-decoded, and the
+      // shared HandlerMap decodes during canonicalization — routing on the canonical form
+      // would decode twice ("/a%2541" would route as "/aA" here and "/a%41" elsewhere)
+      final var path = request.getHttpURI().getPath();
       final var requestHeaders = request.getHeaders();
       final String accessControlRequestMethod;
       final boolean preFlight;
@@ -46,7 +49,18 @@ final class JettyController extends Handler.Sequence {
       final var handler = lookup.handler();
       if (handler == null) {
         final var allowedMethods = lookup.allowedMethods();
-        if (allowedMethods == null) {
+        if (lookup.badRequest()) {
+          // Jetty's UriCompliance rejects ambiguous targets before this handler runs;
+          // this branch is the backstop if a consumer relaxes compliance on the builder's
+          // HttpConfiguration
+          response.setStatus(400);
+          responseHeaders.put(JSON_CONTENT);
+          Content.Sink.write(response, true, """
+              {
+                "msg": "Ambiguous request path."
+              }""", callback
+          );
+        } else if (allowedMethods == null) {
           response.setStatus(404);
           responseHeaders.put(JSON_CONTENT);
           Content.Sink.write(response, true, """

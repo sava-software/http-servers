@@ -9,10 +9,14 @@ record HandlerMapImpl<H>(Map<String, Map<String, H>> queryHandlers,
 
   @Override
   public HandlerLookup<H> lookupHandler(final String method, final String path) {
-    var methodHandlers = queryHandlers.get(path);
+    final var canonicalPath = PathCanonicalizer.canonicalize(path);
+    if (canonicalPath == null) {
+      return HandlerLookup.invalidPath();
+    }
+    var methodHandlers = queryHandlers.get(canonicalPath);
     if (methodHandlers == null) {
       for (final var entry : pathHandlers) {
-        if (path.startsWith(entry.getKey())) {
+        if (canonicalPath.startsWith(entry.getKey())) {
           methodHandlers = entry.getValue();
           break;
         }

@@ -15,7 +15,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 
 ## Quality gate & mutation ratchet
 
-<!-- hardening-template sha256:96ddf18dcc3a -->
+<!-- hardening-template sha256:cdac2e3852a9 -->
 
 Full policy: sava-build's `HARDENING.md`. Each `pitest<Suite>` run diffs its unkilled
 mutants against the accepted baseline in the module's `config/pitest/<suite>-accepted.csv`
@@ -44,14 +44,27 @@ module's `config/pitest/README.md`. The parts that bite most often:
   PIT's minions) as well as the module path.
   The jetty socket suite's handled-flag family flaps between detected and `SURVIVED`
   under load; its baseline holds the union, so stale-entry warnings there are expected.
+  Maintain the union with `-PunionMutationBaseline` (append-only; a full refresh bakes in
+  one run's coin-flips), and measure flips with `pitestModeSnapshot -PpitestMode=<label>`
+  / `pitestModeCompare` / `-PunionModeFlips` rather than by hand — "the cause remains" is
+  a claim to re-measure, not a fact to record once.
 - Every adapter has a `*PostHandlerTest` (happy paths, 405 + Allow) and a
   `*ConformanceTest` pinning the parts of the `Request`/`HttpResponse` contract every
-  backend must agree on — the **raw** query string (documented on `Request.query()`;
-  `JdkRequest` decoded it until 2026-07-22, corrupting boundary scans on percent-encoded
-  delimiters), routing semantics (query-handler paths match exactly plus the
-  trailing-slash alias, path handlers match by prefix; the JDK adapter prefix-matched
-  everything through per-path jdk contexts until 2026-07-22, when `JdkController` moved to
-  the shared `HandlerMap` lookup from a single root context), 500 on a throwing handler
+  backend must agree on — the **raw** query string and path (documented on
+  `Request.query()`; `JdkRequest` decoded both until 2026-07-22/24, corrupting boundary
+  scans and handing decoded traversals to prefix handlers), routing semantics
+  (query-handler paths match exactly plus the trailing-slash alias, path handlers match
+  by prefix; the JDK adapter prefix-matched everything through per-path jdk contexts
+  until 2026-07-22, when `JdkController` moved to the shared `HandlerMap` lookup from a
+  single root context), **canonical routing** (since 2026-07-24 every lookup
+  canonicalizes the raw path first — dot segments and benign escapes resolve before
+  matching, and ambiguous targets (`%2F`, `%5C`, `%00`, `%25` double-encoding, encoded
+  dot segments, empty segments, root-escaping `..`) answer 400 via
+  `HandlerLookup.badRequest()`, never route; before this the JDK adapter routed
+  `/files%2F..%2Fx` decoded into prefix handlers and FusionAuth prefix-matched raw
+  unnormalized paths), a 204/304 answer crossing the wire bodyless, a 512 KiB POST
+  round-tripping byte-identical, HEAD answering 405 + Allow (never derived from GET),
+  500 on a throwing handler
   (the JDK adapter used to abort the connection from blocking handlers and hang the client
   from non-blocking ones), custom status/header propagation (the x402 402-plus-header
   shape), cached JSON responses, case-insensitive header lookup, the body-never-null
@@ -63,16 +76,30 @@ module's `config/pitest/README.md`. The parts that bite most often:
 - A new unkilled mutant has exactly three legal outcomes: **kill it** with a test (prefer
   asserting the property it breaks over restating the implementation), **refactor** it out
   of existence, or **accept it** with a written reason in the module's
-  `config/pitest/README.md`. Never run `-PupdateMutationBaseline` just to make the build
-  pass.
+  `config/pitest/README.md` **and a short family label on the row itself** — refreshes
+  seed new rows `# untriaged`, and triage means replacing that label, so the baseline
+  always says which rows are argued and which are debt. Rows that predate note seeding
+  count as `unlabeled` in the verify summary; label them when touched. Never run
+  `-PupdateMutationBaseline` just to make the build pass.
 - **`SURVIVED` and `NO_COVERAGE` are different problems.** The first is a judgment call
   about equivalence; the second is an untested line and is mechanical work. Never accept a
   `NO_COVERAGE` mutant as "equivalent" — you have not observed its behaviour.
 - **A suite's percentage is not a target.** An accepted mutant with a written reason is
   finished work, not debt. Before trying to raise a number, check whether the remainder is
   `NO_COVERAGE` (real work) or documented equivalents (already closed).
-- Line-number churn from editing a mutated file shows up as paired stale + "new" baseline
-  entries; confirm they're the shifted old ones before refreshing.
+- Pure line drift — every new baseline entry a same-status shift of a stale one,
+  populations unchanged — passes on its own with a notice; refresh at a convenient moment.
+  Anything mixed in (newly covered, unexplained, changed counts) still fails and is triage
+  first, refresh after.
+- **Iterate with `-PmutateOnly=<class-glob>`** while killing a cluster — seconds instead
+  of the full suite — then re-run unscoped before any refresh; the tooling refuses to let
+  a scoped report touch the baseline.
+- Identical baseline rows are sibling mutants of one compound condition and the comparison
+  is a multiset: never hand-dedupe. When one sibling survives, the verify names the killed
+  sibling's test — the survivor is the opposite branch direction; triage it as its own
+  mutant. This repo's baselines were written under the old set-based comparison, so a
+  suite's first run may surface collapsed sibling copies — pre-existing debt made visible,
+  to accept into its documented family or kill, not a regression.
 - **Randomized tests use fixed seeds, and never sleep**: the ratchet needs deterministic
   kills, and PIT re-runs the suite per mutant, so one real wait costs minutes. Exploration
   belongs to the fuzz targets. Time-dependent code takes a clock seam; give test clocks a
@@ -91,10 +118,28 @@ module's `config/pitest/README.md`. The parts that bite most often:
   not reaching concrete classes from an abstract base (version-dependent — check the
   resolved JUnit jar), and coverage attributed to field initializers — exercise factories
   from inside a `@Test`.
+- **Build the subject under test inside the test body, not in a field.** Under `PER_CLASS`
+  lifecycle a field-initialized client's construction coverage attaches to whichever test
+  runs first, so wiring mutants can never pair with the test that drives what they wire —
+  they survive even under a harness that asserts every request. One test that constructs
+  the client in the test method and drives each configured URL restores the pairing.
 - **Kill rates are bounded by the mutator set.** `BigInteger`/`BigDecimal` arithmetic is
   method calls, invisible to the default arithmetic mutators — if fee math on Big types is
   ever introduced, trial `EXPERIMENTAL_BIG_INTEGER` per suite, enable only what fires, and
-  record the numbers in `config/pitest/README.md`.
+  record the numbers in `config/pitest/README.md`. Fluent calls returning their receiver
+  are likewise invisible to `VoidMethodCallMutator`; `EXPERIMENTAL_NAKED_RECEIVER` is
+  enabled (trial numbers recorded in each module's `config/pitest/README.md`) on every
+  suite where it fires — as of the 2026-07-24 `pitestMutatorTrial` re-measure that is all
+  of them except core `wiring`/`response`, jdk `dispatch` and fusionauth `loggerShim`,
+  whose code has no receiver-returning calls. Re-measure with
+  `pitestMutatorTrial -PtrialMutators=<CANDIDATE>` when code evolves — the 2026-07-24
+  pass found firing sites on four suites whose recorded claim was "nothing fires".
+- **PIT minions run on the class path**, even though this repo's tasks run on the module
+  path: `module-info` services are invisible to them, and a test-resources
+  `META-INF/services` is invisible to the module-path `test` task. The adapters therefore
+  declare `HttpServerBuilderFactory` in both places; never commit a harness whose result
+  depends on which task ran it (that is why core's `findFirst` provider path is an
+  accepted `NO_COVERAGE`, not a test-only provider).
 - Exclusions must cover the **test source set**, not a naming convention: shared fakes are
   named `RecordingFoo`/`StubFoo` and match no `*Test*` pattern. After registering or
   widening a suite, check the verify task's warning and confirm no mutated class lives
@@ -111,10 +156,11 @@ module's `config/pitest/README.md`. The parts that bite most often:
   The daemon log (`~/.gradle/daemon/<version>/daemon-<pid>.out.log`) keeps a failed
   build's full output even when the shell discarded it.
 - Fuzz findings become a committed seed input **and** a named regression test, never just
-  a fix — and every committed corpus is replayed by a unit test inside `check`
-  (`VerifyFuzzRegressionTest`, `PayloadFuzzRegressionTest`,
-  `HandlerUtilFuzzRegressionTests`), so a new seed replays automatically and the corpus
-  cannot rot between fuzz runs.
+  a fix — and every committed corpus is replayed inside `check` by a plugin-generated
+  `<Harness>SeedReplayTest` (from `generateFuzzReplayTests`; fails on a missing or empty
+  corpus), so a new seed replays automatically and the corpus cannot rot between fuzz
+  runs. Seed provenance lives in the `src/test/resources/fuzz/README.md` next to each
+  module's corpus directories.
 - **When one thing has two representations, fuzz the differential.** The existing
   harnesses assert agreement (direct-JSON vs Base64-header parse; the gate's total 402/200
   contract), not just absence of crashes — keep new harnesses to that bar.
@@ -131,9 +177,11 @@ The first code to touch every untrusted request: query-string parsing (`HandlerU
 method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
 
 - `./gradlew :http-servers-core:pitestHandlers` — PIT over the `handlers` package (wildcard)
-  against `handlers.*Test*`. 69 mutants; 1 accepted equivalent (triaged in
-  `config/pitest/README.md`) and 2 timed-out (stable in both run modes). Tests live in
-  `HandlerUtilTests` and `HandlerMapTests`.
+  against `handlers.*Test*`. 160 mutants (the canonical-routing contract of 2026-07-24
+  added `PathCanonicalizer` and the `HandlerLookup.badRequest()` state); 1 accepted
+  equivalent (triaged in `config/pitest/README.md`) and 3 timed-out (load-dependent loop
+  conversions). Tests live in `HandlerUtilTests`, `HandlerMapTests` and
+  `PathCanonicalizerTests`.
 - `./gradlew :http-servers-core:pitestWiring` — PIT over `BaseHandlerWiring` (the handler-group
   include/exclude filter that decides which handlers get registered) against
   `BaseHandlerWiringTests`. 78 mutants, **100% killed**, empty baseline — keep it that way.
@@ -157,11 +205,27 @@ method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
 Query param lookup must match only at a parameter boundary (query start or after `&`), never
 as a substring (`page=` must not match inside `perpage=`) — use `indexOfParam`, not
 `query.indexOf`. Applies to both this module's `HandlerUtil` and `http-servers-sava`'s
-`handlers.HandlerUtil`. `./gradlew :http-servers-core:fuzzHandlerUtil` runs a differential
+`handlers.HandlerUtil`.
+
+Routing canonicalizes before it matches: `HandlerMapImpl.lookupHandler` reduces the raw
+request path through `PathCanonicalizer` (per-segment percent-decode, dot-segment
+resolution, trailing slash preserved) and refuses ambiguous targets — malformed escapes,
+escapes or literals introducing `/` `\` NUL, `%25` double-encoding, encoded dot segments,
+empty segments, root-escaping `..` — as `HandlerLookup.badRequest()`, which every
+controller answers with 400. The canonical form decides routing only; `Request.path()`
+stays raw. `./gradlew :http-servers-core:fuzzPathCanonicalizer` runs a generative-oracle
+harness (`PathCanonicalizerFuzz`): token streams whose expected canonical form is built
+alongside, plus an arbitrary-bytes mode asserting never-throws and that accepted results
+are rooted with no dot/empty/backslash/NUL/`%` segment. Seeds live under
+`src/test/resources/fuzz/pathCanonicalizer` and are replayed by the generated
+`PathCanonicalizerFuzzSeedReplayTest`.
+
+`./gradlew :http-servers-core:fuzzHandlerUtil` runs a differential
 harness (`HandlerUtilFuzz`): the hand-rolled boundary scanner against a naive split-based
 reference, required to agree on every input — value, absence, integers, or exception class —
 because since value decoding landed the parser is no longer just a splitter. Seeds live under
-`src/test/resources/fuzz/handlerUtil` and are replayed by `HandlerUtilFuzzRegressionTests`.
+`src/test/resources/fuzz/handlerUtil` and are replayed by the generated
+`HandlerUtilFuzzSeedReplayTest`.
 
 ### http-servers-sava — x402 payment gate (`software.sava.http_servers.sava.x402`)
 
@@ -173,14 +237,14 @@ sponsors, so this is the most heavily tested surface.
 - `./gradlew :http-servers-sava:pitestX402` — PIT over the whole `x402` package (models, gate,
   verifier, settler, cache) against `x402.*Test*`. The `RpcTransactionSubmitter` inner class
   (thin adapter over `SolanaRpcClient`, exercised only against a live node) and the `*Fuzz`
-  harnesses are excluded. 367 mutants, 96% detected; the 13 baseline keys are all triaged
+  harnesses are excluded. 424 mutants, 96% detected; the 13 baseline keys (14 rows) are all triaged
   equivalents with per-key reasons in `config/pitest/README.md` — chiefly guards whose
   removal funnels to the identical error response, and sub-states `TransactionSkeleton`'s
   asymmetric lazy resolution cannot produce (out-of-range program indices throw eagerly;
   account indices resolve to null; data lengths overrun silently — pinned by the
   corruption tests in `SvmExactVerifierTest`).
 - `./gradlew :http-servers-sava:pitestHandlers` — PIT over `handlers.*` (public-key query
-  params) against `handlers.*Test*`. 43 mutants, 88% detected; the 4 baseline keys are
+  params) against `handlers.*Test*`. 44 mutants, 88% detected; the 4 baseline keys (5 rows) are
   triaged equivalents (empty-list identity and unreachable scan boundaries — see
   `config/pitest/README.md`).
 - `./gradlew :http-servers-sava:fuzzSvmVerify -PmaxFuzzTime=<seconds>` — Jazzer over
@@ -203,8 +267,8 @@ probed 2026-07-22: an out-of-range *program* index throws eagerly inside `parseI
 (caught by `verify`'s own `try/catch`), while an out-of-range *account* index resolves
 silently to a `null` account and a corrupted data length yields a slice overrunning the
 transaction bytes — states the rule checks would otherwise dereference and throw past
-`verify`. The `crash_*` inputs in the `svmVerify` corpus (replayed by
-`VerifyFuzzRegressionTest`) and the corruption tests in `SvmExactVerifierTest`
+`verify`. The `crash_*` inputs in the `svmVerify` corpus (replayed by the generated
+`SvmExactVerifyFuzzSeedReplayTest`) and the corruption tests in `SvmExactVerifierTest`
 (`unresolvableProgramIndexRejected`, `unresolvableAccountIndexRejected`,
 `overrunningDataSliceRejected`) guard this.
 
@@ -213,6 +277,17 @@ transaction bytes — states the rule checks would otherwise dereference and thr
 - **Mutation suite**: add `mutation.register("<name>") { targetClasses = ...; targetTests = ... }`
   to the module's `hardening {}` block. Exclude test/fuzz helpers that live in the target
   package via `excludedClasses`.
+- **Shared test scaffolding**: the plugin can generate six support classes
+  (`hardening.generateTestSupport = true`; see sava-build's `HARDENING.md`) — Ports,
+  RecordingExecutor, JulRecorder, LoopbackHttpServer, ManualScheduledExecutor,
+  ConcurrencyHarness. Deliberately NOT adopted (evaluated 2026-07-24): the existing inline
+  helpers are tiny, PIT-pinned, and in places intentionally different (the jdk
+  `RecordingExecutor` bundles its own virtual-thread delegate; the inline JUL captures
+  don't force levels or detach parent handlers). Flip it on the first time a test needs a
+  raw-socket HTTP server (the escape hatch for "unreachable in-harness" transport
+  acceptances), a deterministic scheduler, or a new recorder — instead of hand-rolling
+  another copy — and migrate the inline helpers opportunistically, re-running the owning
+  suites.
 - **Fuzz harness**: write a class with `public static void fuzzerTestOneInput(byte[])` and no
   Jazzer imports (so it compiles with the regular test sources), then
   `fuzz.register("<name>") { targetClass = ...; maxLen = ...; seedCorpus = layout.projectDirectory.dir("src/test/resources/fuzz/<name>") }`.

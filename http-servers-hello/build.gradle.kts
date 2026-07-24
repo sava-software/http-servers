@@ -29,6 +29,8 @@ hardening {
       // thin main wrapper: an argument default and an eternal sleep, unreachable in-harness
       "software.sava.http_servers.hello.Entrypoint"
     )
+    // Trial 2026-07-24: +1 receiver-returning call, killed by existing tests.
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
     targetTests = "software.sava.http_servers.hello.*Test*"
   }
 }

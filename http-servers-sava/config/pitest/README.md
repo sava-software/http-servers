@@ -22,7 +22,16 @@ the per-account scan below it, which returns the same error and payer) — see
 `SvmExactVerifierTest`'s corruption tests, `SvmExactSettlerTest`'s malformed
 payload tests, and `HandlerUtilTests.parseKeyListIgnoresCommaInEarlierParam`.
 
-## x402 suite (13 keys: 11 survived, 2 no_coverage)
+Both suites run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` since the scripted
+`pitestMutatorTrial` re-measure 2026-07-24 (+57 mutants on x402, +1 on
+handlers — all killed by existing tests; the JSON builders and byte-array
+slicing are receiver-returning calls the default set cannot express).
+
+## x402 suite (13 keys / 14 rows: 12 survived, 2 no_coverage)
+
+`verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
+the 2026-07-24 multiset upgrade; sibling rows are identical text and
+deliberately carry no `# label` (notes key on row text).
 
 Context that drives most of the triage, established empirically 2026-07-22
 (see the corruption tests in `SvmExactVerifierTest`): `TransactionSkeleton`
@@ -95,7 +104,11 @@ committed `crash_*` corpus inputs pin both lazy shapes.
   parsing. The decode catch *above* verify is the live path, covered by
   `malformedTransactionPayloadDoesNotSubmit` / `nullPayloadDoesNotSubmit`.
 
-## handlers suite (4 keys, all `SURVIVED`, all in `parsePublicKeyParams`)
+## handlers suite (4 keys / 5 rows, all `SURVIVED`, all in `parsePublicKeyParams`)
+
+Line 42 holds two sibling `ConditionalsBoundary` mutants — one row per
+sibling since the 2026-07-24 multiset upgrade; the duplicate rows carry no
+`# label` (notes key on row text).
 
 - Lines 30, 34 (`EmptyObjectReturnVals`): returning a fresh empty list
   instead of the `NO_PARAMS` constant — equal but not identical, and the

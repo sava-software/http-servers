@@ -49,6 +49,30 @@ final class HandlerMapTests {
   }
 
   @Test
+  void ambiguousPathIsBadRequestNotRouted() {
+    final var handlerMap = map();
+    for (final var raw : new String[]{"/users%2F..%2Fhealth", "/users/%2e%2e/health", "//users", "/users/../../users"}) {
+      final var lookup = handlerMap.lookupHandler("GET", raw);
+      assertTrue(lookup.badRequest(), raw);
+      assertNull(lookup.handler(), raw);
+      assertNull(lookup.allowedMethods(), raw);
+    }
+  }
+
+  @Test
+  void routingIsCanonical() {
+    final var handlerMap = map();
+    assertSame(USERS_GET, handlerMap.lookupHandler("GET", "/api/../users").handler(),
+        "dot segments resolve before the exact match");
+    assertSame(USERS_GET, handlerMap.lookupHandler("GET", "/%75sers").handler(),
+        "benign escapes decode before the exact match");
+    assertSame(API_PREFIX, handlerMap.lookupHandler("GET", "/api/x/../y").handler(),
+        "dot segments resolve before the prefix match");
+    assertFalse(handlerMap.lookupHandler("GET", "/users").badRequest(),
+        "a clean lookup never reads as bad request");
+  }
+
+  @Test
   void unknownPathIsNotFound() {
     final var lookup = map().lookupHandler("GET", "/missing");
     assertNull(lookup.handler());

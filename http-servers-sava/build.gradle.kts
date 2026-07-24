@@ -23,6 +23,9 @@ hardening {
       "software.sava.http_servers.sava.x402.SvmExactSettler\$RpcTransactionSubmitter"
     )
     targetTests = "software.sava.http_servers.sava.x402.*Test*"
+    // NAKED_RECEIVER makes dropped fluent calls (JSON builders, byte-array slicing)
+    // expressible. Trial 2026-07-24: +57 mutants, 56 killed by existing tests, 1 RUN_ERROR.
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
   mutation.register("handlers") {
     targetClasses = listOf("software.sava.http_servers.sava.handlers.*")
@@ -31,6 +34,8 @@ hardening {
       "software.sava.http_servers.sava.handlers.*Fuzz*"
     )
     targetTests = "software.sava.http_servers.sava.handlers.*Test*"
+    // Trial 2026-07-24: +1 receiver-returning call, killed by existing tests.
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
   fuzz.register("x402Payload") {
     targetClass = "software.sava.http_servers.sava.x402.X402PayloadFuzz"

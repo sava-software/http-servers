@@ -13,6 +13,13 @@ a run hung for 40+ minutes). The `loggerShim` suite therefore owns
 `fusionauth.logging.*` with the in-process `FusionAuthJulLoggerTests` as its
 only covering tests, and `dispatch` excludes the package.
 
+The dispatch suite runs `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` since the
+scripted `pitestMutatorTrial` re-measure 2026-07-24 (+2 mutants: one killed
+by existing tests, and the `withLoggerFactory` shim installation — invisible
+to `VoidMethodCall` because java-http's config API is fluent — killed by
+`frameworkLoggingFlowsThroughTheJulShim`, which pins that java-http's own
+logging surfaces through JUL).
+
 ## dispatch suite (5 keys, all `SURVIVED`) — seeded 2026-07-22
 
 Registering this suite (with `FusionAuthConformanceTest`) found and fixed two

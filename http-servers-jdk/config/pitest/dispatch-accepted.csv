@@ -1,2 +1,2 @@
-software.sava.http_servers.jdk.JdkServerBuilder,initRestServer,34,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED
-software.sava.http_servers.jdk.JdkServerBuilder,initRestServer,34,RemoveConditionalMutator_EQUAL_IF,SURVIVED
+software.sava.http_servers.jdk.JdkServerBuilder,initRestServer,34,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # wildcard-bind family
+software.sava.http_servers.jdk.JdkServerBuilder,initRestServer,34,RemoveConditionalMutator_EQUAL_IF,SURVIVED # wildcard-bind family

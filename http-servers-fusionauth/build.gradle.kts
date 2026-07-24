@@ -25,6 +25,10 @@ hardening {
       "software.sava.http_servers.fusionauth.logging.*"
     )
     targetTests = "software.sava.http_servers.fusionauth.*Test*"
+    // NAKED_RECEIVER makes dropped fluent calls (java-http's withListener/withLoggerFactory
+    // chains) expressible. Trial 2026-07-24: +2 mutants; 1 killed by existing tests, the
+    // logger-shim installation killed by frameworkLoggingFlowsThroughTheJulShim.
+    mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
   mutation.register("loggerShim") {
     // the java-http -> JUL level/emit mapping, killed by the in-process logger tests only

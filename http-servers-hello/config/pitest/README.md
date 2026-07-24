@@ -4,6 +4,10 @@ Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
 run's unkilled mutants against the accepted baseline in `<suite>-accepted.csv`
 and **fails on anything new**. Full policy lives in sava-build's `HARDENING.md`.
 
+The suite runs `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` since the scripted
+`pitestMutatorTrial` re-measure 2026-07-24 (+1 mutant, killed by existing
+tests).
+
 ## hello suite (2 keys, both `SURVIVED`) — seeded 2026-07-22
 
 `HelloServerTests` boots the demo through ServiceLoader against all three

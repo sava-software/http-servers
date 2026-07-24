@@ -36,7 +36,13 @@ final class FusionAuthController implements HTTPHandler {
     final var handler = lookup.handler();
     if (handler == null) {
       final var allowedMethods = lookup.allowedMethods();
-      if (allowedMethods == null) {
+      if (lookup.badRequest()) {
+        ResponseUtil.writeResponse(400, response, """
+            {
+              "msg": "Ambiguous request path."
+            }"""
+        );
+      } else if (allowedMethods == null) {
         ResponseUtil.writeResponse(404, response, """
             {
               "msg": "No handler for path."
