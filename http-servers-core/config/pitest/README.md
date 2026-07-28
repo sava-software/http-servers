@@ -46,6 +46,29 @@ conversions in the query and path scans). They count as detected and were
 observed `TIMED_OUT` across runs — not unioned into the baseline; if one
 flips to `SURVIVED`, verify the flip in both modes before adding it.
 
+### Audited timeouts (`handlers-timeouts.csv`)
+
+A timeout detects slowness, not wrongness, so the ratchet cannot see a
+weakened covering assertion behind one — the three members are audited by
+`class,method,mutator` and each carries its structural cause below. A
+timed-out mutant outside the set is a reviewer-stop: identify the cause,
+paste the printed row, then write it here. The key is line-less, so a *new*
+timeout in one of these three method+mutator pairs draws no warning — re-read
+the line named here whenever that code changes.
+
+- `PathCanonicalizer.canonicalize` 64 (`IncrementsMutator`) — `i += 2`, the
+  skip past the two hex digits of a `%XX` escape, becomes `i -= 2`: the scan
+  walks back onto the same `%`, re-decodes it and never reaches the end of
+  the path. Killed by wall clock, not by an assertion.
+- `HandlerUtil.indexOfParam` 24 (`MathMutator`) — the loop's
+  `query.indexOf(param, index + 1)` becomes `index - 1`, so the search
+  restarts *before* the match it just rejected and returns that same index
+  forever.
+- `HandlerUtil.parseIntParams` 106 (`IncrementsMutator`) — `++to`, the step
+  past the comma before the next `indexOf(',', from)`, becomes `--to`:
+  `from` lands before the comma, the next scan finds the same comma, and the
+  value list grows without the cursor advancing.
+
 ## wiring suite — no accepted mutants
 
 `wiring-accepted.csv` is empty and the suite runs at 100% (78 mutants).
@@ -105,3 +128,18 @@ seeding rather than accepted. The remainder:
 The suite also carries 2 `TIMED_OUT` mutants (loop mutations in
 `formatPlaceholders`), observed detected in both solo and gate runs — not
 unioned into the baseline.
+
+### Audited timeouts (`logging-timeouts.csv`)
+
+Both rows collapse to one audited member —
+`BaseJulLogger, formatPlaceholders, IncrementsMutator` at lines 69 and 80 —
+because the audit key is line-less; the two lines are the same structural
+mistake in the same scan, and a new timeout in that method+mutator will not
+warn, so re-read both lines when `formatPlaceholders` changes.
+
+- 69 is the `i++` that skips the `{` of an escaped `\{`; 80 is the `i++` that
+  skips the `}` of a `{}` placeholder. Reversed to `i--`, the loop's own
+  `i++` returns the cursor to the character it just consumed, so the same
+  token is emitted forever and the `StringBuilder` grows until the watchdog
+  fires. Detection here is the clock, not `logFormatSubstitutesBeforeEmitting`
+  — soften that assertion and these two would still read as detected.

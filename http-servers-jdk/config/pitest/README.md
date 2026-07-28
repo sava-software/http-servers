@@ -20,6 +20,33 @@ in-process one and carries 7 `TIMED_OUT` mutants (socket-wait conversions),
 observed detected in both solo and `qualityGate` runs — not unioned into
 the baseline.
 
+### Audited timeouts (`dispatch-timeouts.csv`)
+
+Every member is the same structural cause: a removed call that leaves the
+`HttpExchange` unanswered and unclosed, so the test client blocks on a
+response that will never arrive and PIT's watchdog — not an assertion — ends
+the run. That is exactly the blind spot the audited set exists for: weaken
+any of these tests to uselessness and the timeouts keep reading as
+"detected". The seven rows collapse to four line-less members; re-read the
+lines named here whenever the dispatch path changes.
+
+- `JdkQueryHandler.handle` 44, 46 (`VoidMethodCallMutator`) — 44 drops
+  `process(exchange)` on the blocking branch, 46 drops the
+  `executor.execute(...)` that carries the non-blocking one. Either way no
+  handler ever runs and nothing writes response headers.
+- `JdkQueryHandler.lambda$handle$0` 48, 52 (`VoidMethodCallMutator`) — the
+  same pair one frame deeper inside the executor task: 48 drops
+  `process(exchange)`, 52 drops the `JdkController.serverError(exchange)`
+  that is the only remaining answer once the controller's frame is gone.
+- `JdkController.handle` 47, 51 (`VoidMethodCallMutator`) — 47 drops the
+  `handler.handle(exchange)` dispatch itself, 51 the `serverError(exchange)`
+  fallback in its catch; the second is why a throwing handler hangs the
+  client instead of aborting it.
+- `JdkHttpServer.start` 15 (`VoidMethodCallMutator`) — `server.start()`
+  removed. `HttpServer.create` has already bound the port, so connections sit
+  in the accept backlog: the client connects and then waits forever, which is
+  why this reads as a timeout rather than a connection refusal.
+
 The error-log `VoidMethodCallMutator`s (`JdkController.handle`,
 `JdkQueryHandler`'s executor task, `initRestServer`'s create-failure log)
 were killed 2026-07-22: the failure-path tests capture the JUL records and

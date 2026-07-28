@@ -11,7 +11,8 @@ family below (the only `NO_COVERAGE` rows in the suite).
 
 Covering tests are real socket round trips (`JettyConformanceTest`,
 `JettyPostHandlerTest`). The suite carries 6 `TIMED_OUT` mutants
-(socket-wait conversions), and the handled-flag family below **flaps between
+(socket-wait conversions, audited in `dispatch-timeouts.csv` — causes at the
+end of this file), and the handled-flag family below **flaps between
 `SURVIVED` and detected across runs** — the baseline holds the union of
 observed states, so quiet runs report stale entries rather than failing;
 that is expected and safe.
@@ -111,6 +112,31 @@ executor 2026-07-22).
   removal): the flag's
   default is already false; the call is explicit documentation. (Its
   `setSendServerVersion` sibling defaults *on* and is killed.)
+
+## Audited timeouts (`dispatch-timeouts.csv`)
+
+Every member is one structural cause: a removed call that leaves the Jetty
+`Callback` never completed, so the response is never flushed and the socket
+client waits until PIT's watchdog ends the run. Detection here is the clock,
+not an assertion — weaken these tests and the timeouts still read as
+"detected", which is why membership is audited rather than counted. The six
+rows collapse to three line-less members; because the key carries no line, a
+*new* timeout in one of these method+mutator pairs draws no warning, so
+re-read the lines below when the write paths change.
+
+- `JettyController.handle` 66, 75, 92, 101 (`VoidMethodCallMutator`) — 66 and
+  75 drop the `Content.Sink.write` that emits the 404 and 405 JSON bodies
+  (the write completes the callback; without it the status is set and nothing
+  is ever sent), 92 drops the `callback.succeeded()` that terminates a
+  pre-flight answer, and 101 the `callback.failed(throwable)` that terminates
+  the 500 path. The sibling write at 58 (the ambiguous-path 400) is *not*
+  here: it is `NO_COVERAGE`, socket-unreachable behind Jetty's
+  `UriCompliance` — see the `# compliance backstop` family above.
+- `JettyQueryHandler.handle` 42 (`VoidMethodCallMutator`) — `response.write`
+  removed: status and headers are set, the body never leaves, the callback
+  never completes.
+- `JettyCachedJsonResponseHandler.handle` 26 (`VoidMethodCallMutator`) — the
+  same shape on the cached-JSON path.
 
 Jetty's `HttpFields.Mutable.put` returns `Mutable` rather than `void`, so
 `VoidMethodCallMutator` never fires on a header write. The suite therefore

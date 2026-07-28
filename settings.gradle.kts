@@ -1,7 +1,30 @@
 rootProject.name = "http-servers"
 
 pluginManagement {
+  // Point '-PsavaBuildLocalRepo=<sava-build>/build/sava-test-repo' (or set it in
+  // ~/.gradle/gradle.properties) at a local sava-build checkout to build against an
+  // unpublished plugin change; sava-build publishes that repo with
+  //   ./gradlew publishSavaBuildTestPublicationToSavaTestRepoRepository
+  // and every id below then resolves to the 0.0.0-test module regardless of the
+  // version the plugins block requests — which the plugin announces at the end of
+  // each build, so this block stays silent. That publish is NOT automatic: chain it
+  // ahead of the consumer build rather than remembering it. The useModule call also
+  // bypasses plugin markers, which the test repo does not contain. When done, drop
+  // the property: the unset path is the normal published resolution from GitHub
+  // Packages below.
+  val savaBuildLocalRepo = providers.gradleProperty("savaBuildLocalRepo")
+    .orNull?.takeIf { it.isNotBlank() }
+  if (savaBuildLocalRepo != null) {
+    resolutionStrategy.eachPlugin {
+      if (requested.id.id.startsWith("software.sava.build")) {
+        useModule("software.sava:sava-build:0.0.0-test")
+      }
+    }
+  }
   repositories {
+    if (savaBuildLocalRepo != null) {
+      maven(url = savaBuildLocalRepo)
+    }
     gradlePluginPortal()
     mavenCentral()
     val gprUser = providers.gradleProperty("savaGithubPackagesUsername")
@@ -19,16 +42,11 @@ pluginManagement {
       }
     }
   }
-  // Resolve sava-build from GitHub Packages. Uncomment only while depending on an
-  // unpublished sava-build change, then publish, bump the versions below, re-comment.
-//  if (settingsDir.resolve("../sava-build").isDirectory) {
-//    includeBuild("../sava-build")
-//  }
 }
 
 plugins {
-  id("software.sava.build") version "21.5.15"
-  id("software.sava.build.feature.jdk-provisioning") version "21.5.15"
+  id("software.sava.build") version "21.5.17"
+  id("software.sava.build.feature.jdk-provisioning") version "21.5.17"
 }
 
 javaModules {

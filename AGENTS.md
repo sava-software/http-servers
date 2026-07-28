@@ -15,7 +15,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 
 ## Quality gate & mutation ratchet
 
-<!-- hardening-template sha256:7f9eb869ee7e -->
+<!-- hardening-template sha256:f6dea3f41ab7 -->
 
 Full policy: sava-build's `HARDENING.md`. Each `pitest<Suite>` run diffs its unkilled
 mutants against the accepted baseline in the module's `config/pitest/<suite>-accepted.csv`
@@ -111,11 +111,23 @@ module's `config/pitest/README.md`. The parts that bite most often:
   collections (`assertThrows(UnsupportedOperationException, ...)`) at every size: the
   mutable-escape direction is a kill, not an acceptance; only the content-equal siblings
   are family-accepted equivalents.
-- **Do not rely on PIT's timeout to detect a mutant.** `TIMED_OUT` counts as detected and
-  is load-dependent — the same mutant can report `SURVIVED` alone and `TIMED_OUT` under
-  `qualityGate`. Verify a changed baseline in both modes; union only rows observed to flip,
-  never every `TIMED_OUT` row. The core `handlers` suite carries 2 timed-out mutants
-  observed stable in both modes (see its `config/pitest/README.md`).
+- **Do not rely on PIT's timeout to detect a mutant.** `TIMED_OUT` counts as detected, is
+  never written to a baseline, and is load-dependent — the same mutant can report
+  `SURVIVED` alone and `TIMED_OUT` under `qualityGate`. Verify a changed baseline in both
+  modes; union only rows observed to flip, never every `TIMED_OUT` row.
+- **A new timed-out mutant is a reviewer-stop, not detection noise.** For exactly those
+  mutants the ratchet cannot see a weakened covering assertion — the watchdog keeps
+  "detecting" whatever the test asserts — so every suite that carries timeouts audits them
+  as a *set*, not a count: line-less `class,method,mutator` rows in
+  `config/pitest/<suite>-timeouts.csv`, with each member's structural cause (which loop
+  exit the mutant removed, which socket wait it made unbounded) written in the module's
+  `config/pitest/README.md`. The verify warns on any timed-out mutant outside the set
+  (paste the printed row, then write the cause), on members matching no mutant in the run
+  (retire them), and on members whose method appears nowhere in the README. Audited here:
+  core `handlers` and `logging`, jdk `dispatch`, jetty `dispatch`; the remaining suites
+  carry no timeouts and so have no file. Because the key is line-less, a *new* timeout in
+  an already-audited method+mutator draws no warning — name the line in the README cause
+  and re-read it when that code changes.
 - **A flaky harness is worse than recorded debt.** If an interleaving or a boundary cannot
   be made deterministic, accept the mutant with a written reason rather than chasing it
   with sleeps or spin-waits. Allocation and timing harnesses are a last resort, reserved
