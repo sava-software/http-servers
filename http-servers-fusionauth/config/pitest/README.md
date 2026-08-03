@@ -36,7 +36,7 @@ overloads were deleted outright.
   which no handler map contains — the same 405 + Allow the non-pre-flight
   path returns. The non-blank contract itself is pinned by
   `blankRequestMethodHeaderIsNotAPreflight`.
-- `# null-origin no-op` — `FusionAuthController` 55 (`EQUAL_IF` on `origin != null`): forcing the
+- `# null-origin no-op` — `FusionAuthController` 61 (`EQUAL_IF` on `origin != null`): forcing the
   branch with a null origin calls `setHeader(ACAO, null)`, a no-op; the
   no-Origin pre-flight sub-case has no well-defined semantics to pin
   (mirrors the Jetty controller's equivalent row).
@@ -52,6 +52,18 @@ overloads were deleted outright.
   guard's null side is unreachable — java-http hands back an empty body for
   body-less requests (the guarded contract itself is pinned by
   `bodyOnAGetRequestIsEmptyNotNull`). Defensive, retained.
+
+### Audited timeouts (`dispatch-timeouts.csv`)
+
+One gate-load-only member: `FusionAuthController.handle` 61
+(`RemoveConditionalMutator_EQUAL_IF`) — the same coordinate as the accepted
+`# null-origin no-op` baseline row. This is not a loop conversion: the
+mutant's covering tests are full socket round trips, and under `qualityGate`
+parallelism their wall clock can exceed PIT's per-mutant margin
+(recorded × 1.25 + 4000 ms), so the coordinate reads `TIMED_OUT` under load
+and `SURVIVED` solo (first observed 2026-08-02). Solo quiet streaks are
+normal for a gate-load-only member; the row's equivalence argument is the
+`# null-origin no-op` bullet above, unchanged by how slowly the tests run.
 
 ## loggerShim suite — no accepted mutants
 

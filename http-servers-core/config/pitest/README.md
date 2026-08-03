@@ -2,16 +2,19 @@
 
 Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
 run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline keys
+are line-less — `class,method,mutator,status`, with each row's observed line
+kept as a trailing `# line` tag that refreshes rewrite (migrated 2026-08-02).
+Full policy — the three legal outcomes for a new survivor, determinism
+requirements, targeting rules — lives in sava-build's `HARDENING.md`.
 
 Never refresh with `-PupdateMutationBaseline` just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Line numbers are part of the baseline key, so edits to a
-mutated file shift entries — confirm the verify task's paired stale/"new"
-rows are the shifted old ones before refreshing.
+reason below. Because the key carries no line, edits around a mutated method
+churn nothing; when the line-drift advisory names a key here, re-read that
+key's argument below against the current code before trusting it — a new
+mutant landing at an accepted key inherits the acceptance silently (the
+documented same-key swap hole).
 
 Baselines seeded 2026-07-21 (`handlers`, `wiring`) and 2026-07-22 (`server`,
 `response`, `logging`, alongside their first unit tests); every entry below
@@ -79,7 +82,19 @@ Keep it that way: any new survivor here is a real gap, not debt.
 `response-accepted.csv` is empty and the suite runs at 100% (9 mutants).
 Keep it that way.
 
-## server suite — 1 accepted entry
+The suite also targets `core.request.*` (2026-08-03). That package holds only
+the all-abstract `Request` interface, so it adds no mutants and does not move
+the count above — but the ownership audit counts it as production code, and
+this package's `QueryHandler` (`Request -> HttpResponse`) is its only
+production consumer. It is targeted rather than declined so a default method
+added to `Request` later is mutated by default; `targetTests` deliberately
+stays `core.response.*Test*`, so that first default method is owed a test in
+this suite's test scope rather than a silent widening.
+
+## server suite — no accepted mutants
+
+`server-accepted.csv` was retired 2026-08-02 and the suite runs at 100%
+(39 mutants). Keep it that way.
 
 The registration-breadcrumb `VoidMethodCallMutator`s (`addQueryHandler`,
 `addPathHandler`) were killed 2026-07-22 by
@@ -87,18 +102,17 @@ The registration-breadcrumb `VoidMethodCallMutator`s (`addQueryHandler`,
 "registrations are observable in ops logs" contract is pinned, not
 accepted.
 
-- `# provider-path unreachable in-harness` — `HttpServerBuilderFactory.findFirst` 10
-  (`NullReturnVals`, `NO_COVERAGE`): the return is reachable only with a service provider on
-  the module path. **Unreachable in-harness**: core ships no provider, the
-  gradlex whitebox test module cannot add a `provides` clause, and a
-  `META-INF/services` registration would resolve under PIT's classpath
-  minions but not under the module-path `test` task — a mode-dependent
-  harness. What would reach it: a blackbox integration test module with its
-  own descriptor. The throwing path is pinned by
-  `findFirstThrowsWhenNoBackendIsOnThePath`; the success path is pinned
-  end-to-end (2026-07-24) by hello's `findFirstDiscoversABackend`, which
-  runs `findFirst` with all three providers on the path — the row stays
-  `NO_COVERAGE` only because that test lives outside this suite.
+The suite's last accepted row — `HttpServerBuilderFactory.findFirst`
+(`NullReturnVals`, `NO_COVERAGE` `# provider-path unreachable in-harness`) —
+was killed 2026-08-02 by the probe-and-branch pattern:
+`BaseHttpServerBuilderTests.FixtureFactory` is registered in test-resources
+`META-INF/services`, so PIT's class-path minions resolve it and
+`findFirstResolvesAProviderWhereOneIsVisible` asserts the built builder's
+identity, while the module-path `test` task (where that registration is
+invisible) asserts the no-provider throw. The old acceptance read
+"never commit a mode-dependent harness" as forbidding any world-sensitive
+test; the rule forbids mode-dependent *pass/fail*, not assertions that
+branch on a `ServiceLoader` probe — both worlds pass deterministically.
 
 ## logging suite — 5 accepted entries
 
@@ -131,11 +145,11 @@ unioned into the baseline.
 
 ### Audited timeouts (`logging-timeouts.csv`)
 
-Both rows collapse to one audited member —
+Both timed-out rows collapse to one audited member —
 `BaseJulLogger, formatPlaceholders, IncrementsMutator` at lines 69 and 80 —
 because the audit key is line-less; the two lines are the same structural
 mistake in the same scan, and a new timeout in that method+mutator will not
-warn, so re-read both lines when `formatPlaceholders` changes.
+warn, so re-read every line named here when `formatPlaceholders` changes.
 
 - 69 is the `i++` that skips the `{` of an escaped `\{`; 80 is the `i++` that
   skips the `}` of a `{}` placeholder. Reversed to `i--`, the loop's own
@@ -143,3 +157,13 @@ warn, so re-read both lines when `formatPlaceholders` changes.
   token is emitted forever and the `StringBuilder` grows until the watchdog
   fires. Detection here is the clock, not `logFormatSubstitutesBeforeEmitting`
   — soften that assertion and these two would still read as detected.
+  Which of the two reads `TIMED_OUT` on a given run is load-dependent (one
+  detected outright, 2026-08-03); 2 timed out is the steady state.
+- **A third mutant shares this key and must not inherit its argument.** Line
+  75 (`sb.append(stringify(values[next++]))`) is the same mutator in the same
+  method, but `next` is the *argument* cursor, not the loop cursor: reversing
+  it re-reads the previous value instead of spinning, so it is killed
+  outright by `logFormatSubstitutesBeforeEmitting` asserting the substituted
+  text. It is named here only because the line-less key would admit it
+  silently — a `TIMED_OUT` at 75 is **not** covered by the argument above and
+  is a reviewer-stop, since nothing about that statement can hang.

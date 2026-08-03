@@ -2,16 +2,18 @@
 
 Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
 run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy — the three legal
-outcomes for a new survivor, determinism requirements, targeting rules —
-lives in sava-build's `HARDENING.md`.
+baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline keys
+are line-less — `class,method,mutator,status`, with each row's observed line
+kept as a trailing `# line` tag that refreshes rewrite (migrated 2026-08-02).
+Full policy — the three legal outcomes for a new survivor, determinism
+requirements, targeting rules — lives in sava-build's `HARDENING.md`.
 
 Never refresh with `-PupdateMutationBaseline` just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
-reason below. Line numbers are part of the baseline key, so edits to a
-mutated file shift entries — confirm the verify task's paired stale/"new"
-rows are the shifted old ones before refreshing.
+reason below. Because the key carries no line, edits around a mutated method
+churn nothing; when the line-drift advisory names a key here, re-read that
+key's argument below against the current code before trusting it — a new
+mutant landing at an accepted key inherits the acceptance silently.
 
 Both suites were fully triaged 2026-07-22: every remaining key has a reason
 below; there is no untriaged debt. The 2026-07-22 passes killed 6 keys (settlement-cache
@@ -30,13 +32,13 @@ slicing are receiver-returning calls the default set cannot express).
 ## x402 suite (13 keys / 14 rows: 12 survived, 2 no_coverage)
 
 `verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
-the 2026-07-24 multiset upgrade. Both twins carry the **same** label
-(`# unreachable sub-state`, hand-written 2026-07-24): notes key on row text,
-so identical twins must stay identical. A label on only one twin — or two
-different labels — collides on reload (the note map is keyed by row text, so
-the last line parsed wins and then spreads to both on the next refresh),
-which is why the tooling never auto-labels siblings; matching labels are the
-only safe hand-edit, and they keep the rows out of the `unlabeled` count.
+the 2026-07-24 multiset upgrade. Both twins carry the same label
+(`# unreachable sub-state`) because they share one argument; since the
+line-less migration notes are stored per row, siblings *may* carry distinct
+labels when their arguments genuinely differ, and a refresh seeds a newly
+surfaced sibling `# untriaged` like any other newcomer — the twin's argument
+was written for the mutants it had, so triage a new sibling as its own
+mutant (check the report's line before accepting).
 
 Context that drives most of the triage, established empirically 2026-07-22
 (see the corruption tests in `SvmExactVerifierTest`): `TransactionSkeleton`

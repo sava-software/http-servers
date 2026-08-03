@@ -12,10 +12,7 @@ hardening {
   mutation.register("handlers") {
     // request routing and query parsing: the first code to touch every untrusted request
     targetClasses = listOf("software.sava.http_servers.core.handlers.*")
-    excludedClasses = listOf(
-      "software.sava.http_servers.core.handlers.*Test*",
-      "software.sava.http_servers.core.handlers.*Fuzz*"
-    )
+    excludedClasses = listOf("software.sava.http_servers.core.handlers.*Test*")
     targetTests = "software.sava.http_servers.core.handlers.*Test*"
     // NAKED_RECEIVER makes dropped fluent calls (String slicing, list building) expressible.
     // Trial 2026-07-22: +5 mutants, all killed by existing tests.
@@ -61,18 +58,30 @@ hardening {
     mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"
   }
   mutation.register("response") {
-    // response factories and header-copy semantics
-    targetClasses = listOf("software.sava.http_servers.core.response.*")
-    excludedClasses = listOf("software.sava.http_servers.core.response.*Test*")
+    // response factories and header-copy semantics, plus the request-side half of the
+    // message contract: core.request holds only the Request interface, whose sole
+    // production consumer is this package's QueryHandler (Request -> HttpResponse), and
+    // whose implementations are per-adapter and owned by each adapter's dispatch suite.
+    // Targeted rather than declined so a default method added to Request later joins the
+    // mutated population by default instead of escaping it silently (an all-abstract
+    // interface contributes no mutants today). targetTests stays narrow on purpose —
+    // kills come only from targetTests, and widening it to core.*Test* would re-run every
+    // core test per response mutant and blur which suite owns a kill; the first default
+    // method on Request is owed a test in this suite's test scope.
+    targetClasses = listOf(
+      "software.sava.http_servers.core.response.*",
+      "software.sava.http_servers.core.request.*"
+    )
+    excludedClasses = listOf(
+      "software.sava.http_servers.core.response.*Test*",
+      "software.sava.http_servers.core.request.*Test*"
+    )
     targetTests = "software.sava.http_servers.core.response.*Test*"
   }
   mutation.register("logging") {
     // placeholder formatting and caller resolution; emission is asserted through a capturing handler
     targetClasses = listOf("software.sava.http_servers.core.logging.*")
-    excludedClasses = listOf(
-      "software.sava.http_servers.core.logging.*Test*",
-      "software.sava.http_servers.core.logging.*Fuzz*"
-    )
+    excludedClasses = listOf("software.sava.http_servers.core.logging.*Test*")
     targetTests = "software.sava.http_servers.core.logging.*Test*"
     // NAKED_RECEIVER makes dropped StringBuilder.append chains expressible.
     // Trial 2026-07-22: +7 mutants, all killed by existing tests.

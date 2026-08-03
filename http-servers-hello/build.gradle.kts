@@ -26,8 +26,13 @@ hardening {
     targetClasses = listOf("software.sava.http_servers.hello.*")
     excludedClasses = listOf(
       "software.sava.http_servers.hello.*Test*",
-      // thin main wrapper: an argument default and an eternal sleep, unreachable in-harness
       "software.sava.http_servers.hello.Entrypoint"
+    )
+    declineExclusionAudit(
+      "software.sava.http_servers.hello.Entrypoint",
+      "thin main wrapper — a port-argument default and an eternal sleep; the boot flow it " +
+          "wraps (factory discovery, wiring, server start) is HelloServer, mutated by this " +
+          "suite and killed through HelloServerTests round trips against all three backends"
     )
     // Trial 2026-07-24: +1 receiver-returning call, killed by existing tests.
     mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"

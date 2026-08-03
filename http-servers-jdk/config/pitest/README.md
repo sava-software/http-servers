@@ -2,8 +2,9 @@
 
 Each `pitest<Suite>` run is finalized by `pitest<Suite>Verify`, which diffs the
 run's unkilled mutants (`SURVIVED` and `NO_COVERAGE`) against the accepted
-baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline row
-format: `class,method,line,mutator,status`. Full policy lives in sava-build's
+baseline in `<suite>-accepted.csv` and **fails on anything new**. Baseline keys
+are line-less — `class,method,mutator,status`, observed lines kept as trailing
+`# line` tags refreshes rewrite. Full policy lives in sava-build's
 `HARDENING.md`.
 
 Never refresh with `-PupdateMutationBaseline` just to make the build pass:

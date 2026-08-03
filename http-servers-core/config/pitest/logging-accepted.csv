@@ -1,5 +1,5 @@
-software.sava.http_servers.core.logging.BaseJulLogger,formatPlaceholders,61,MathMutator,SURVIVED # allocation-size only
-software.sava.http_servers.core.logging.BaseJulLogger,log,26,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output
-software.sava.http_servers.core.logging.BaseJulLogger,logFormat,38,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output
-software.sava.http_servers.core.logging.BaseJulLogger,resolveCaller,51,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive fallback
-software.sava.http_servers.core.logging.BaseJulLogger,stringify,93,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output
+software.sava.http_servers.core.logging.BaseJulLogger,formatPlaceholders,MathMutator,SURVIVED # allocation-size only # line 61
+software.sava.http_servers.core.logging.BaseJulLogger,log,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output # line 26
+software.sava.http_servers.core.logging.BaseJulLogger,logFormat,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output # line 38
+software.sava.http_servers.core.logging.BaseJulLogger,resolveCaller,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive fallback # line 51
+software.sava.http_servers.core.logging.BaseJulLogger,stringify,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # identical-output # line 93

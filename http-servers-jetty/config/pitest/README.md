@@ -96,18 +96,25 @@ executor 2026-07-22).
   without an Origin header) has no well-defined semantics to pin.
 - `# error funnel` — `JettyController` 86 (`setStatus(500)` removal in the catch):
   `callback.failed(throwable)` on the next line produces the same 500.
-- **`# compliance backstop`** family (`JettyController` 52 `EQUAL_ELSE` on the
-  `badRequest()` check, 56–58 `NO_COVERAGE` in the 400 branch): the shared
-  `HandlerMap` refuses ambiguous paths (encoded separators, encoded dot
-  segments, double-encoding, empty segments — see core's `PathCanonicalizer`),
-  but Jetty's own `UriCompliance.DEFAULT` rejects every such target before
-  this handler runs — measured 2026-07-24: the whole ambiguous conformance
-  battery, literal backslash included, answers 400 from Jetty's layer. The
-  branch is defense in depth for a future Jetty default change; unreachable
-  through any socket harness by construction. What would reach it: an
-  in-process controller harness with a faked `Request`/`Response` pair (the
-  named escape for all four rows). The jdk and fusionauth twins of this
-  branch are live and killed by `ambiguousPathsAreRefused`.
+- **`# compliance backstop`** family (4 rows): the shared `HandlerMap`
+  refuses ambiguous paths (encoded separators, encoded dot segments,
+  double-encoding, empty segments — see core's `PathCanonicalizer`), but
+  Jetty's own `UriCompliance.DEFAULT` rejects every such target before this
+  handler runs — measured 2026-07-24 on Jetty 12.1: the whole ambiguous
+  conformance battery, literal backslash included, answers 400 from Jetty's
+  layer. Per row: `JettyController` 52 (`EQUAL_ELSE`, `SURVIVED`) skips the
+  `badRequest()` check — covered, but no socket request can arrive with an
+  ambiguous canonical form, so both branch directions answer identically;
+  56–58 (`NO_COVERAGE`) are the 400-writing statements of the branch no
+  request enters. The branch is defense in depth for a future Jetty default
+  change. **Missing capability** (the named escape for all four rows, and an
+  acceptance with an expiry date): constructing a Jetty core `Request` whose
+  `HttpURI` carries an ambiguous target without a socket — an in-process
+  controller harness with faked `Request`/`Response`/`Callback` (the
+  `generateTestSupport` adoption trigger in AGENTS.md). Re-measure the
+  UriCompliance claim on every Jetty major/minor bump — the 400-from-Jetty
+  measurement is what keeps these four equivalent. The jdk and fusionauth
+  twins of this branch are live and killed by `ambiguousPathsAreRefused`.
 - `# explicit-default doc` — `JettyServerBuilder` 29 (`setSendXPoweredBy(false)`
   removal): the flag's
   default is already false; the call is explicit documentation. (Its

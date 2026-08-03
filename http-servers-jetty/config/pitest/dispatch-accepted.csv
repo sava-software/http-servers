@@ -1,15 +1,15 @@
-software.sava.http_servers.jetty.JettyCachedJsonResponseHandler,handle,28,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family
-software.sava.http_servers.jetty.JettyController,handle,100,VoidMethodCallMutator,SURVIVED # error funnel
-software.sava.http_servers.jetty.JettyController,handle,102,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family
-software.sava.http_servers.jetty.JettyController,handle,39,RemoveConditionalMutator_EQUAL_IF,SURVIVED # blank-ACRM funnel
-software.sava.http_servers.jetty.JettyController,handle,52,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # compliance backstop
-software.sava.http_servers.jetty.JettyController,handle,56,VoidMethodCallMutator,NO_COVERAGE # compliance backstop
-software.sava.http_servers.jetty.JettyController,handle,57,NakedReceiverMutator,NO_COVERAGE # compliance backstop
-software.sava.http_servers.jetty.JettyController,handle,58,VoidMethodCallMutator,NO_COVERAGE # compliance backstop
-software.sava.http_servers.jetty.JettyController,handle,81,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family
-software.sava.http_servers.jetty.JettyController,handle,84,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op
-software.sava.http_servers.jetty.JettyController,handle,93,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family
-software.sava.http_servers.jetty.JettyController,handle,96,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24)
-software.sava.http_servers.jetty.JettyController,handle,96,BooleanTrueReturnValsMutator,SURVIVED # handled-flag family
-software.sava.http_servers.jetty.JettyQueryHandler,handle,43,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24)
-software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,29,VoidMethodCallMutator,SURVIVED # explicit-default doc (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24)
+software.sava.http_servers.jetty.JettyCachedJsonResponseHandler,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 28
+software.sava.http_servers.jetty.JettyController,handle,VoidMethodCallMutator,SURVIVED # error funnel # line 100
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 102
+software.sava.http_servers.jetty.JettyController,handle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # blank-ACRM funnel # line 39
+software.sava.http_servers.jetty.JettyController,handle,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # compliance backstop # line 52
+software.sava.http_servers.jetty.JettyController,handle,VoidMethodCallMutator,NO_COVERAGE # compliance backstop # line 56
+software.sava.http_servers.jetty.JettyController,handle,NakedReceiverMutator,NO_COVERAGE # compliance backstop # line 57
+software.sava.http_servers.jetty.JettyController,handle,VoidMethodCallMutator,NO_COVERAGE # compliance backstop # line 58
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 81
+software.sava.http_servers.jetty.JettyController,handle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op # line 84
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 93
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 96
+software.sava.http_servers.jetty.JettyController,handle,BooleanTrueReturnValsMutator,SURVIVED # handled-flag family # line 96
+software.sava.http_servers.jetty.JettyQueryHandler,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 43
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,VoidMethodCallMutator,SURVIVED # explicit-default doc (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 29

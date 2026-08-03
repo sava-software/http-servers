@@ -221,10 +221,32 @@ final class BaseHttpServerBuilderTests {
     assertFalse(builder.excludeGroup(Set.of("/path")));
   }
 
+  /// Registered in src/test/resources/META-INF/services, which only the class path can
+  /// see — PIT minions resolve it, the module-path test task cannot. Public because
+  /// ServiceLoader instantiates it; nested here so it matches the suite's *Test* exclusion.
+  public static final class FixtureFactory implements HttpServerBuilderFactory {
+
+    static final HttpServerBuilder BUILT = new RecordingBuilder();
+
+    @Override
+    public HttpServerBuilder createBuilder() {
+      return BUILT;
+    }
+  }
+
   @Test
-  void findFirstThrowsWhenNoBackendIsOnThePath() {
-    // core itself ships no HttpServerBuilderFactory provider; the adapter modules do
-    assertThrows(java.util.NoSuchElementException.class, HttpServerBuilderFactory::findFirst);
+  void findFirstResolvesAProviderWhereOneIsVisible() {
+    // Probe-and-branch: assertions branch on which world is running, results are
+    // deterministic in both. Module path: core declares no provider and test-resources
+    // services files are invisible, so resolution fails. Class path (PIT minions, plain
+    // classpath runs): FixtureFactory above is the only provider, so findFirst must
+    // return exactly the builder it built.
+    final var providers = java.util.ServiceLoader.load(HttpServerBuilderFactory.class).stream().toList();
+    if (providers.isEmpty()) {
+      assertThrows(java.util.NoSuchElementException.class, HttpServerBuilderFactory::findFirst);
+    } else {
+      assertSame(FixtureFactory.BUILT, HttpServerBuilderFactory.findFirst());
+    }
   }
 
   @Test

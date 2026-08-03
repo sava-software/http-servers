@@ -18,9 +18,18 @@ hardening {
     targetClasses = listOf("software.sava.http_servers.sava.x402.*")
     excludedClasses = listOf(
       "software.sava.http_servers.sava.x402.*Test*",
-      "software.sava.http_servers.sava.x402.*Fuzz*",
       // thin adapter over SolanaRpcClient: submit/poll-confirm against a live node
       "software.sava.http_servers.sava.x402.SvmExactSettler\$RpcTransactionSubmitter"
+    )
+    declineExclusionAudit(
+      "software.sava.http_servers.sava.x402.SvmExactSettler\$RpcTransactionSubmitter",
+      "thin adapter over SolanaRpcClient behind the TransactionSubmitter seam — send() is a " +
+          "bare sendTransaction().join() and confirm() polls getSignatureStatuses() until a " +
+          "commitment level is reached, so every mutant needs a live node advancing a real " +
+          "signature's status to change status. Correctness owner: the settler's own error " +
+          "mapping (TRANSACTION_FAILED / TRANSACTION_CONFIRMATION_FAILED), which is mutated " +
+          "by this suite and killed through SvmExactSettlerTest's FakeSubmitter; the record's " +
+          "construction is pinned by the TransactionSubmitter.rpc(...) assertion there"
     )
     targetTests = "software.sava.http_servers.sava.x402.*Test*"
     // NAKED_RECEIVER makes dropped fluent calls (JSON builders, byte-array slicing)
@@ -29,10 +38,7 @@ hardening {
   }
   mutation.register("handlers") {
     targetClasses = listOf("software.sava.http_servers.sava.handlers.*")
-    excludedClasses = listOf(
-      "software.sava.http_servers.sava.handlers.*Test*",
-      "software.sava.http_servers.sava.handlers.*Fuzz*"
-    )
+    excludedClasses = listOf("software.sava.http_servers.sava.handlers.*Test*")
     targetTests = "software.sava.http_servers.sava.handlers.*Test*"
     // Trial 2026-07-24: +1 receiver-returning call, killed by existing tests.
     mutators = "STRONGER,EXPERIMENTAL_NAKED_RECEIVER"

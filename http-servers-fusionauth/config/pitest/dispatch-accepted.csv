@@ -1,3 +1,3 @@
-software.sava.http_servers.fusionauth.FusionAuthController,handle,26,RemoveConditionalMutator_EQUAL_IF,SURVIVED # blank-ACRM funnel
-software.sava.http_servers.fusionauth.FusionAuthController,handle,61,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op
-software.sava.http_servers.fusionauth.FusionAuthRequest,body,37,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive fallback
+software.sava.http_servers.fusionauth.FusionAuthController,handle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # blank-ACRM funnel # line 26
+software.sava.http_servers.fusionauth.FusionAuthController,handle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op # line 61
+software.sava.http_servers.fusionauth.FusionAuthRequest,body,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # defensive fallback # line 37
