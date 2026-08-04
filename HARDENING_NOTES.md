@@ -71,8 +71,7 @@ edges the ratchet cannot see.
   exercises core's provider path end-to-end but cannot kill core rows —
   cross-module tests are outside the owning suite's pattern. That is why the
   probe-and-branch fixture lives in core's own test sources.
-- **No fuzz workflow, on purpose.** The local release checklist runs
-  `fuzzAll -PmaxFuzzTime=<seconds>`, whose task graph is derived from every
-  registered target. `fuzzWorkflowInSync` is a compatibility no-op; a manual
-  GitHub campaign may be added for optional exploration, but is not release
-  evidence.
+- **No fuzz workflow, on purpose.** Long fuzz campaigns are a local
+  release-checklist item here, recorded with the budget used; a manual GitHub
+  campaign may be added for optional exploration, but this repo does not treat
+  one as release evidence. (Task semantics: `hardeningHelp`.)
