@@ -7,7 +7,7 @@ are line-less — `class,method,mutator,status`, observed lines kept as trailing
 `# line` tags refreshes rewrite. Full policy lives in sava-build's
 `HARDENING.md`.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
+Never run a baseline-writer task just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
 reason below.
 
@@ -23,13 +23,14 @@ the baseline.
 
 ### Audited timeouts (`dispatch-timeouts.csv`)
 
-Every member is the same structural cause: a removed call that leaves the
-`HttpExchange` unanswered and unclosed, so the test client blocks on a
-response that will never arrive and PIT's watchdog — not an assertion — ends
-the run. That is exactly the blind spot the audited set exists for: weaken
-any of these tests to uselessness and the timeouts keep reading as
-"detected". The seven rows collapse to four line-less members; re-read the
-lines named here whenever the dispatch path changes.
+Four of the five members share one structural cause: a removed call that
+leaves the `HttpExchange` unanswered and unclosed, so the test client blocks
+on a response that will never arrive and PIT's watchdog — not an assertion —
+ends the run. The fifth (`process` 79) blocks the client a different way and
+is argued separately below. That is exactly the blind spot the audited set
+exists for: weaken any of these tests to uselessness and the timeouts keep
+reading as "detected". The eight rows collapse to five line-less members;
+re-read the lines named here whenever the dispatch path changes.
 
 - `JdkQueryHandler.handle` 44, 46 (`VoidMethodCallMutator`) — 44 drops
   `process(exchange)` on the blocking branch, 46 drops the
@@ -47,6 +48,16 @@ lines named here whenever the dispatch path changes.
   removed. `HttpServer.create` has already bound the port, so connections sit
   in the accept backlog: the client connects and then waits forever, which is
   why this reads as a timeout rather than a connection refusal.
+- `JdkQueryHandler.process` 79 (`VoidMethodCallMutator`) — `os.write(body)`
+  removed. **Not the unanswered-exchange cause above**: line 77 has already
+  run `sendResponseHeaders(statusCode, body.length)`, so the exchange is
+  answered and the try-with-resources still closes it — the response simply
+  under-delivers against the Content-Length it just promised. The client is
+  told to expect `body.length` bytes, receives none, and blocks reading the
+  promised body. Admitted 2026-08-04, first observed timing out under
+  certification load having previously read as detected; load-dependent like
+  the rest of this module's dispatch family, so a solo run may show it killed
+  by the body assertion instead.
 
 The error-log `VoidMethodCallMutator`s (`JdkController.handle`,
 `JdkQueryHandler`'s executor task, `initRestServer`'s create-failure log)

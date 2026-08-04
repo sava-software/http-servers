@@ -8,7 +8,7 @@ kept as a trailing `# line` tag that refreshes rewrite (migrated 2026-08-02).
 Full policy — the three legal outcomes for a new survivor, determinism
 requirements, targeting rules — lives in sava-build's `HARDENING.md`.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
+Never run a baseline-writer task just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
 reason below. Because the key carries no line, edits around a mutated method
 churn nothing; when the line-drift advisory names a key here, re-read that
@@ -30,6 +30,21 @@ handlers — all killed by existing tests; the JSON builders and byte-array
 slicing are receiver-returning calls the default set cannot express).
 
 ## x402 suite (13 keys / 14 rows: 12 survived, 2 no_coverage)
+
+**PIT 1.25.9 population migration (2026-08-04): 388 -> 389 mutants, one new
+row, killed — the baseline is unchanged.** The newcomer is
+`SettlementResponse.success` 27 (`NullReturnVals`), killed by
+`X402ModelTest.settlementResponseSuccessExactJson`. It is not a compact
+constructor: `success` is *both* a record component of `SettlementResponse`
+and a static factory, and PIT 1.25.8's record-member filter matched by name,
+so the factory was silently unmutated while its symmetric twin `failure`
+(31, 40) was mutated all along. 1.25.9 disambiguates properly. Measured by
+running the suite at both versions and diffing the reports; the only
+difference in the whole suite is that one row. Unkilled is unchanged at 11
+(9 survived + 2 no_coverage), so no accepted row was added, refreshed, or
+re-argued. The lesson generalizes past this suite: **any method sharing a
+name with a record component was unmutated before 1.25.9** — re-read such
+methods here and in `handlers` when they change.
 
 `verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
 the 2026-07-24 multiset upgrade. Both twins carry the same label

@@ -122,14 +122,15 @@ executor 2026-07-22).
 
 ## Audited timeouts (`dispatch-timeouts.csv`)
 
-Every member is one structural cause: a removed call that leaves the Jetty
-`Callback` never completed, so the response is never flushed and the socket
-client waits until PIT's watchdog ends the run. Detection here is the clock,
-not an assertion — weaken these tests and the timeouts still read as
-"detected", which is why membership is audited rather than counted. The six
-rows collapse to three line-less members; because the key carries no line, a
-*new* timeout in one of these method+mutator pairs draws no warning, so
-re-read the lines below when the write paths change.
+Three of the four members are one structural cause: a removed call that leaves
+the Jetty `Callback` never completed, so the response is never flushed and the
+socket client waits until PIT's watchdog ends the run. The fourth
+(`initRestServer` 34) is a bind-path cause argued separately below. Detection
+here is the clock, not an assertion — weaken these tests and the timeouts
+still read as "detected", which is why membership is audited rather than
+counted. The seven rows collapse to four line-less members; because the key
+carries no line, a *new* timeout in one of these method+mutator pairs draws no
+warning, so re-read the lines below when the write paths change.
 
 - `JettyController.handle` 66, 75, 92, 101 (`VoidMethodCallMutator`) — 66 and
   75 drop the `Content.Sink.write` that emits the 404 and 405 JSON bodies
@@ -142,6 +143,21 @@ re-read the lines below when the write paths change.
 - `JettyQueryHandler.handle` 42 (`VoidMethodCallMutator`) — `response.write`
   removed: status and headers are set, the body never leaves, the callback
   never completes.
+- `JettyServerBuilder.initRestServer` 34 (`RemoveConditionalMutator_EQUAL_ELSE`)
+  — **not the un-completed-callback cause above.** The guard is
+  `if (host != null && !host.isBlank())`; skipping it drops
+  `serverConnector.setHost(host)`, so the connector binds the wildcard instead
+  of the requested `localhost`. `startOnAnOccupiedPortThrows` occupies
+  `localhost:P` and asserts the bind fails, but a wildcard bind dodges that
+  conflict, so `start()` succeeds where the test expects a throw — and the
+  test holds no reference to the server it never expected to exist, so that
+  live acceptor is leaked into the mutation run. Solo the assertion still
+  reports first and the mutant reads `KILLED` (verified scoped 2026-08-04,
+  16/16); under certification parallelism the leaked acceptor outlives the
+  watchdog and it reads `TIMED_OUT`. Admitted 2026-08-04. Killing it in both
+  modes means stopping any unexpectedly-started server in that test — the
+  named missing capability here, and strictly better than this acceptance.
+
 - `JettyCachedJsonResponseHandler.handle` 26 (`VoidMethodCallMutator`) — the
   same shape on the cached-JSON path.
 

@@ -6,3 +6,4 @@
 software.sava.http_servers.jetty.JettyController,                handle, VoidMethodCallMutator # lines 66, 75, 92, 101
 software.sava.http_servers.jetty.JettyQueryHandler,              handle, VoidMethodCallMutator # line 42
 software.sava.http_servers.jetty.JettyCachedJsonResponseHandler, handle, VoidMethodCallMutator # line 26
+software.sava.http_servers.jetty.JettyServerBuilder,             initRestServer, RemoveConditionalMutator_EQUAL_ELSE # line 34

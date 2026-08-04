@@ -58,9 +58,10 @@ module's `config/pitest/README.md`. The parts that bite most often:
   The jetty socket suite's handled-flag family flaps between detected and `SURVIVED`
   under load; its baseline holds the union, so stale-entry warnings there are expected.
   Maintain the union with `pitestModeSnapshot -PpitestMode=<label>` / `pitestModeCompare`
-  / `-PunionModeFlips`, which writes the flip evidence into the row (per-mode statuses and
-  the observed `# line` tag) — verify-side `-PunionMutationBaseline` is the escape hatch
-  for a directly witnessed flip and lands bare rows that owe their evidence note by hand.
+  / `pitestModeCompareUnion`, which writes the flip evidence into the row (per-mode
+  statuses and the observed `# line` tag) — the suite's own `BaselineUnion` task is the
+  escape hatch for a directly witnessed flip and lands bare rows that owe their evidence
+  note by hand.
   "The cause remains" is a claim to re-measure, not a fact to record once.
 - Every adapter has a `*PostHandlerTest` (happy paths, 405 + Allow) and a
   `*ConformanceTest` pinning the parts of the `Request`/`HttpResponse` contract every
@@ -93,8 +94,9 @@ module's `config/pitest/README.md`. The parts that bite most often:
   `config/pitest/README.md` **and a short family label on the row itself** — refreshes
   seed new rows `# untriaged`, and triage means replacing that label, so the baseline
   always says which rows are argued and which are debt. Rows that predate note seeding
-  count as `unlabeled` in the verify summary; label them when touched. Never run
-  `-PupdateMutationBaseline` just to make the build pass.
+  count as `unlabeled` in the verify summary; label them when touched. Never run a
+  baseline-writer task just to make the build pass. `hardeningHelp` lists the writers the
+  installed plugin actually has — treat it, not this file, as the authority on task names.
 - **`SURVIVED` and `NO_COVERAGE` are different problems.** The first is a judgment call
   about equivalence; the second is usually an untested line and is mechanical work. Never
   accept a `NO_COVERAGE` mutant as "equivalent" — you have not observed its behaviour.
@@ -313,7 +315,9 @@ sponsors, so this is the most heavily tested surface.
 - `./gradlew :http-servers-sava:pitestX402` — PIT over the whole `x402` package (models, gate,
   verifier, settler, cache) against `x402.*Test*`. The `RpcTransactionSubmitter` inner class
   (thin adapter over `SolanaRpcClient`, exercised only against a live node) is excluded by
-  hand; the `*Fuzz` harnesses need no glob — registered fuzz targets are auto-excluded. 424 mutants, 96% detected; the 13 baseline keys (14 rows) are all triaged
+  hand; the `*Fuzz` harnesses need no glob — registered fuzz targets are auto-excluded.
+  389 mutants, 97% detected (388 until the PIT 1.25.9 bump added one killed row — see
+  the module README); the 13 baseline keys (14 rows) are all triaged
   equivalents with per-key reasons in `config/pitest/README.md` — chiefly guards whose
   removal funnels to the identical error response, and sub-states `TransactionSkeleton`'s
   asymmetric lazy resolution cannot produce (out-of-range program indices throw eagerly;

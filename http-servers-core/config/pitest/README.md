@@ -8,7 +8,7 @@ kept as a trailing `# line` tag that refreshes rewrite (migrated 2026-08-02).
 Full policy — the three legal outcomes for a new survivor, determinism
 requirements, targeting rules — lives in sava-build's `HARDENING.md`.
 
-Never refresh with `-PupdateMutationBaseline` just to make the build pass:
+Never run a baseline-writer task just to make the build pass:
 kill the mutant, refactor it out of existence, or record its equivalence
 reason below. Because the key carries no line, edits around a mutated method
 churn nothing; when the line-drift advisory names a key here, re-read that

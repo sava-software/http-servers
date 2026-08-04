@@ -5,5 +5,6 @@
 # in README.md. Measured under `qualityGate` 2026-07-28.
 software.sava.http_servers.jdk.JdkQueryHandler, handle,           VoidMethodCallMutator # lines 44, 46
 software.sava.http_servers.jdk.JdkQueryHandler, lambda$handle$0,  VoidMethodCallMutator # lines 48, 52
+software.sava.http_servers.jdk.JdkQueryHandler, process,          VoidMethodCallMutator # line 79
 software.sava.http_servers.jdk.JdkController,   handle,           VoidMethodCallMutator # lines 47, 51
 software.sava.http_servers.jdk.JdkHttpServer,   start,            VoidMethodCallMutator # line 15
