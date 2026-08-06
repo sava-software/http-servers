@@ -55,35 +55,38 @@ overloads were deleted outright.
 
 ### Audited timeouts (`dispatch-timeouts.csv`)
 
-One gate-load-only member: `FusionAuthController.handle` 61
-(`RemoveConditionalMutator_EQUAL_IF`) — the same coordinate as the accepted
-`# null-origin no-op` baseline row. This is not a loop conversion: the
-mutant's covering tests are full socket round trips, and under `qualityGate`
-parallelism their wall clock can exceed PIT's per-mutant margin
-(recorded × 1.25 + 4000 ms), so the coordinate reads `TIMED_OUT` under load
-and `SURVIVED` solo (first observed 2026-08-02). Solo quiet streaks are
-normal for a gate-load-only member; the row's equivalence argument is the
-`# null-origin no-op` bullet above, unchanged by how slowly the tests run.
+**The set is empty and armed — this suite has no audited timeout member.**
+`dispatch-timeouts.csv` is kept as comments only so a newly timed-out mutant
+still lands as a reviewer-stop instead of passing as silent detection.
 
-**This member is classified `cause:resource` and is currently a
-reviewer-stop.** Forcing the branch makes `setHeader(ACAO, null)` — a no-op
-producing a byte-identical response — so the mutated path *terminates*; it
-has a path-owned finite completion guarantee and therefore cannot honestly be
-called `cause:liveness`. Under the classification rules introduced with the
-21.5.22 candidate, `cause:resource` "terminates and needs a deterministic
-contract-first disposition, not watchdog detection", which fails
-`-PstrictTimeoutAudit` and so blocks certification.
+Its one member, `FusionAuthController.handle`
+(`RemoveConditionalMutator_EQUAL_IF`, line 61 at the time), was retired
+2026-08-05. It entered the set on 2026-08-02 because its covering tests are
+full socket round trips whose wall clock exceeded PIT's per-mutant margin
+(recorded × 1.25 + 4000 ms) under `qualityGate` parallelism. That was never a
+liveness argument: forcing the branch makes `setHeader(ACAO, null)` — a no-op
+producing a byte-identical response — so the mutated path terminates. Under
+the cause classification the audit is a `class,method,mutator` judgment, and
+the honest category here was `cause:resource`, which "terminates and needs a
+deterministic contract-first disposition, not watchdog detection".
 
-The contract-first disposition already exists: the accepted
-`# null-origin no-op` `SURVIVED` row above. A history-free run on 2026-08-05
-(`pitestDispatch -PnoMutationHistory`) read the coordinate `SURVIVED` with
-zero timed-out mutants in the suite, which is evidence that the timeout
-membership is no longer needed. It is **not** authorization to shrink the
-record: one history-free run cannot separate stable removal from an uninsured
-load-dependent flip, and the tooling says so explicitly. Retiring this member
-needs re-measurement under both solo and gate load reconciled against the
-removal criterion, then `pitestDispatchBaselinePrune` — deliberate work, not a
-side effect of a template adoption.
+That disposition already existed and **remains**: the accepted
+`# null-origin no-op` `SURVIVED` row above, whose equivalence argument is
+unchanged by how slowly the tests run.
+
+Retirement evidence — three agreeing history-free observations, each read from
+the full report rather than an aggregate count, with the coordinate reading
+`SURVIVED` and the audit key carrying zero `TIMED_OUT` copies in every one:
+
+- a solo history-free preview;
+- a fresh solo `pitestDispatch -PnoMutationHistory`;
+- a fresh `-PnoMutationHistory` run under representative gate load, with six
+  mutation suites executing in parallel.
+
+The plugin independently reported the member "quiet for 3 runs" and eligible
+for retirement. No baseline writer ran: `BaselinePrune` edits accepted
+`SURVIVED`/`NO_COVERAGE` debt, not timeout membership, and both
+`FusionAuthController.handle` accepted rows are preserved.
 
 ## loggerShim suite — no accepted mutants
 

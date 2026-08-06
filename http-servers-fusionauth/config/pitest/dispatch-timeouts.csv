@@ -1,7 +1,20 @@
 # Audited TIMED_OUT set for the 'dispatch' suite (HARDENING.md, the audited-timeout
-# bullet): line-less class,method,mutator keys, one per member. A timed-out mutant
-# outside this set is a reviewer-stop — the ratchet cannot see a weakened covering
-# assertion behind a timeout. Structural causes, and the lines they argue about, are
-# in README.md. Gate-load-only member: solo runs read it SURVIVED (the accepted
-# '# null-origin no-op' baseline row); observed TIMED_OUT under `qualityGate` 2026-08-02.
-software.sava.http_servers.fusionauth.FusionAuthController, handle, RemoveConditionalMutator_EQUAL_IF # cause:resource # line 61
+# bullet): line-less class,method,mutator keys plus a cause category, one per member.
+# A timed-out mutant outside this set is a reviewer-stop — the ratchet cannot see a
+# weakened covering assertion behind a timeout. Structural causes live in README.md.
+#
+# The set is intentionally EMPTY and armed: this suite currently has no admissible
+# audited timeout. The file is kept so a newly timed-out mutant still lands as a
+# reviewer-stop rather than as silent detection.
+#
+# Retired 2026-08-05: FusionAuthController, handle, RemoveConditionalMutator_EQUAL_IF
+# (the '# null-origin no-op' coordinate, line 61 at the time). Forcing that branch
+# makes setHeader(ACAO, null) — a no-op producing a byte-identical response — so the
+# mutated path terminates and never had a liveness argument; it entered this set on
+# 2026-08-02 only because gate parallelism pushed its socket round trips past PIT's
+# per-mutant margin. Its disposition is the accepted '# null-origin no-op' SURVIVED
+# row in dispatch-accepted.csv, which REMAINS. Retirement evidence: three agreeing
+# history-free observations (one solo preview, one fresh solo, one fresh six-suite
+# gate/load run), each read from the full report — the coordinate read SURVIVED and
+# the audit key carried zero TIMED_OUT copies in every one — plus the plugin's own
+# three-run quiet-member notice. No baseline writer was involved.
