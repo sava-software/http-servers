@@ -4,4 +4,4 @@
 # assertion behind a timeout. Structural causes, and the lines they argue about, are
 # in README.md. Gate-load-only member: solo runs read it SURVIVED (the accepted
 # '# null-origin no-op' baseline row); observed TIMED_OUT under `qualityGate` 2026-08-02.
-software.sava.http_servers.fusionauth.FusionAuthController, handle, RemoveConditionalMutator_EQUAL_IF # line 61
+software.sava.http_servers.fusionauth.FusionAuthController, handle, RemoveConditionalMutator_EQUAL_IF # cause:resource # line 61

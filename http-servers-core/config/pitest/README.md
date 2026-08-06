@@ -55,9 +55,12 @@ A timeout detects slowness, not wrongness, so the ratchet cannot see a
 weakened covering assertion behind one — the three members are audited by
 `class,method,mutator` and each carries its structural cause below. A
 timed-out mutant outside the set is a reviewer-stop: identify the cause,
-paste the printed row, then write it here. The key is line-less, so a *new*
-timeout in one of these three method+mutator pairs draws no warning — re-read
-the line named here whenever that code changes.
+paste the printed row, classify it, then write it here. All three are
+`cause:liveness` — each is a non-advancing scan with no path-owned finite
+completion. Membership and cause are key-level, so a liveness mutant and a
+finite sibling sharing one key is a known blind spot. The `# line` values are
+diagnostic pointers only; source movement never warns, fails, or needs
+re-anchoring.
 
 - `PathCanonicalizer.canonicalize` 64 (`IncrementsMutator`) — `i += 2`, the
   skip past the two hex digits of a `%XX` escape, becomes `i -= 2`: the scan
@@ -146,10 +149,11 @@ unioned into the baseline.
 ### Audited timeouts (`logging-timeouts.csv`)
 
 Both timed-out rows collapse to one audited member —
-`BaseJulLogger, formatPlaceholders, IncrementsMutator` at lines 69 and 80 —
-because the audit key is line-less; the two lines are the same structural
-mistake in the same scan, and a new timeout in that method+mutator will not
-warn, so re-read every line named here when `formatPlaceholders` changes.
+`BaseJulLogger, formatPlaceholders, IncrementsMutator` (`cause:liveness`) at
+lines 69 and 80 — the two lines are the same structural mistake in the same
+scan. Membership and cause are key-level, so a finite sibling at this key
+would be a blind spot. The line values are diagnostic only and never need
+re-anchoring when `formatPlaceholders` moves.
 
 - 69 is the `i++` that skips the `{` of an escaped `\{`; 80 is the `i++` that
   skips the `}` of a `{}` placeholder. Reversed to `i--`, the loop's own

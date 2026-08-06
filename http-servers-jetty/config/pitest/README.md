@@ -128,9 +128,11 @@ socket client waits until PIT's watchdog ends the run. The fourth
 (`initRestServer` 34) is a bind-path cause argued separately below. Detection
 here is the clock, not an assertion — weaken these tests and the timeouts
 still read as "detected", which is why membership is audited rather than
-counted. The seven rows collapse to four line-less members; because the key
-carries no line, a *new* timeout in one of these method+mutator pairs draws no
-warning, so re-read the lines below when the write paths change.
+counted. The seven rows collapse to four line-less members, all
+`cause:liveness`. Membership and cause are key-level, so a finite sibling
+sharing one of these keys is a known blind spot. The line values below are
+diagnostic pointers only — moving the write paths never warns, fails, or
+requires re-anchoring.
 
 - `JettyController.handle` 66, 75, 92, 101 (`VoidMethodCallMutator`) — 66 and
   75 drop the `Content.Sink.write` that emits the 404 and 405 JSON bodies

@@ -29,8 +29,11 @@ on a response that will never arrive and PIT's watchdog — not an assertion —
 ends the run. The fifth (`process` 79) blocks the client a different way and
 is argued separately below. That is exactly the blind spot the audited set
 exists for: weaken any of these tests to uselessness and the timeouts keep
-reading as "detected". The eight rows collapse to five line-less members;
-re-read the lines named here whenever the dispatch path changes.
+reading as "detected". The eight rows collapse to five line-less members, all
+`cause:liveness`. Membership and cause are key-level, so a finite sibling
+sharing one of these keys is a known blind spot. The line values named here
+are diagnostic pointers only — moving the dispatch path never warns, fails, or
+requires re-anchoring.
 
 - `JdkQueryHandler.handle` 44, 46 (`VoidMethodCallMutator`) — 44 drops
   `process(exchange)` on the blocking branch, 46 drops the

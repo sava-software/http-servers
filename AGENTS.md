@@ -15,7 +15,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 
 ## Quality gate & mutation ratchet
 
-<!-- hardening-template sha256:9ef03098c9cd -->
+<!-- hardening-template sha256:014396ea56fe -->
 
 Full policy: sava-build's `HARDENING.md`. Each `pitest<Suite>` run diffs its unkilled
 mutants against the accepted baseline in the module's `config/pitest/<suite>-accepted.csv`
@@ -151,16 +151,27 @@ module's `config/pitest/README.md`. The parts that bite most often:
   mutants the ratchet cannot see a weakened covering assertion — the watchdog keeps
   "detecting" whatever the test asserts — so every suite that carries timeouts audits them
   as a *set*, not a count: line-less `class,method,mutator` rows in
-  `config/pitest/<suite>-timeouts.csv`, with each member's structural cause (which loop
-  exit the mutant removed, which socket wait it made unbounded) written in the module's
-  `config/pitest/README.md`. The verify warns on any timed-out mutant outside the set
-  (paste the printed row, then write the cause — admit a newcomer to the set only once its
-  cause is written), on members matching no mutant in the run (retire them), and on
-  members whose method appears nowhere in the README. Audited here:
-  core `handlers` and `logging`, jdk `dispatch`, jetty `dispatch`; the remaining suites
-  carry no timeouts and so have no file. Because the key is line-less, a *new* timeout in
-  an already-audited method+mutator draws no warning — name the line in the README cause
-  and re-read it when that code changes.
+  `config/pitest/<suite>-timeouts.csv`, each carrying a **cause category**, with the full
+  structural argument in the module's `config/pitest/README.md`. Only `cause:liveness` is
+  admissible watchdog detection — the mutated path has no path-owned finite completion
+  guarantee once deterministic seams and budgets are exhausted; a fixture's emergency exit
+  does not demote that to resource work, but the fixture bound belongs in the README.
+  `cause:resource` terminates and owes a deterministic contract test/fix or a stable
+  `SURVIVED` equivalence argument instead of watchdog detection; it and `cause:untriaged`
+  are reviewer-stops that fail strict certification. Liveness authorizes valid `TIMED_OUT`
+  only, never `MEMORY_ERROR`. The verify warns on any timed-out mutant outside the set
+  (paste the printed row, classify it, then write the cause) and on members matching no
+  mutant. Audited here: core `handlers` and `logging`, jdk `dispatch`, jetty `dispatch`,
+  fusionauth `dispatch`; the remaining suites carry no timeouts and so have no file.
+  **`# line` tags are diagnostic metadata only.** They do not authorize a cause, do not
+  warn, do not fail certification, and never need re-anchoring: adding a method, moving
+  imports, reflowing an expression or otherwise moving source is not a hardening record
+  change. Membership and cause are key-level, which leaves a known blind spot when a
+  liveness mutant and a finite sibling share one key — positive multiplicity drift prints
+  the line-full candidates for review. Retiring a row needs
+  `pitest<Suite> -PnoMutationHistory` evidence across the relevant loads; assisted reports
+  are previews and never advance timeout status. `pitest<Suite>Debt` is the quick static
+  preview of all of this.
 - **A flaky harness is worse than recorded debt.** If an interleaving or a boundary cannot
   be made deterministic, accept the mutant with a written reason rather than chasing it
   with sleeps or spin-waits. Allocation and timing harnesses are a last resort, reserved

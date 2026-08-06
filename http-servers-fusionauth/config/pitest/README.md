@@ -65,6 +65,26 @@ and `SURVIVED` solo (first observed 2026-08-02). Solo quiet streaks are
 normal for a gate-load-only member; the row's equivalence argument is the
 `# null-origin no-op` bullet above, unchanged by how slowly the tests run.
 
+**This member is classified `cause:resource` and is currently a
+reviewer-stop.** Forcing the branch makes `setHeader(ACAO, null)` — a no-op
+producing a byte-identical response — so the mutated path *terminates*; it
+has a path-owned finite completion guarantee and therefore cannot honestly be
+called `cause:liveness`. Under the classification rules introduced with the
+21.5.22 candidate, `cause:resource` "terminates and needs a deterministic
+contract-first disposition, not watchdog detection", which fails
+`-PstrictTimeoutAudit` and so blocks certification.
+
+The contract-first disposition already exists: the accepted
+`# null-origin no-op` `SURVIVED` row above. A history-free run on 2026-08-05
+(`pitestDispatch -PnoMutationHistory`) read the coordinate `SURVIVED` with
+zero timed-out mutants in the suite, which is evidence that the timeout
+membership is no longer needed. It is **not** authorization to shrink the
+record: one history-free run cannot separate stable removal from an uninsured
+load-dependent flip, and the tooling says so explicitly. Retiring this member
+needs re-measurement under both solo and gate load reconciled against the
+removal criterion, then `pitestDispatchBaselinePrune` — deliberate work, not a
+side effect of a template adoption.
+
 ## loggerShim suite — no accepted mutants
 
 `loggerShim-accepted.csv` is empty and the suite runs at 100% (13 mutants)

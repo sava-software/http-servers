@@ -3,6 +3,6 @@
 # outside this set is a reviewer-stop — the ratchet cannot see a weakened covering
 # assertion behind a timeout. Structural causes, and the lines they argue about, are
 # in README.md. Measured under `qualityGate` 2026-07-28.
-software.sava.http_servers.core.handlers.PathCanonicalizer, canonicalize,   IncrementsMutator # line 64
-software.sava.http_servers.core.handlers.HandlerUtil,       indexOfParam,   MathMutator       # line 24
-software.sava.http_servers.core.handlers.HandlerUtil,       parseIntParams, IncrementsMutator # line 106
+software.sava.http_servers.core.handlers.PathCanonicalizer, canonicalize,   IncrementsMutator # cause:liveness # line 64
+software.sava.http_servers.core.handlers.HandlerUtil,       indexOfParam,   MathMutator # cause:liveness # line 24
+software.sava.http_servers.core.handlers.HandlerUtil,       parseIntParams, IncrementsMutator # cause:liveness # line 106

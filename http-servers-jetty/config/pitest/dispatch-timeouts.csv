@@ -3,7 +3,7 @@
 # outside this set is a reviewer-stop — the ratchet cannot see a weakened covering
 # assertion behind a timeout. Structural causes, and the lines they argue about, are
 # in README.md. Measured under `qualityGate` 2026-07-28.
-software.sava.http_servers.jetty.JettyController,                handle, VoidMethodCallMutator # lines 66, 75, 92, 101
-software.sava.http_servers.jetty.JettyQueryHandler,              handle, VoidMethodCallMutator # line 42
-software.sava.http_servers.jetty.JettyCachedJsonResponseHandler, handle, VoidMethodCallMutator # line 26
-software.sava.http_servers.jetty.JettyServerBuilder,             initRestServer, RemoveConditionalMutator_EQUAL_ELSE # line 34
+software.sava.http_servers.jetty.JettyController,                handle, VoidMethodCallMutator # cause:liveness # lines 66, 75, 92, 101
+software.sava.http_servers.jetty.JettyQueryHandler,              handle, VoidMethodCallMutator # cause:liveness # line 42
+software.sava.http_servers.jetty.JettyCachedJsonResponseHandler, handle, VoidMethodCallMutator # cause:liveness # line 26
+software.sava.http_servers.jetty.JettyServerBuilder,             initRestServer, RemoveConditionalMutator_EQUAL_ELSE # cause:liveness # line 34
