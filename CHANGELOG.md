@@ -1,5 +1,26 @@
 # Changelog
 
+## [25.3.0](https://github.com/sava-software/http-servers/compare/25.2.0...25.3.0) (2026-08-07)
+
+
+### Features
+
+* **core:** add HttpServer.stop() and make servers AutoCloseable ([715c35d](https://github.com/sava-software/http-servers/commit/715c35d34fdad07e09ef4c99048418473133cc1f))
+* **hardening:** adopt line-less baselines, ownership audit and certification ([81a5d1f](https://github.com/sava-software/http-servers/commit/81a5d1f6ccf7e4cd5cac0580d24ab58e0f278d07))
+* **hardening:** bind every mutation record to PIT 1.25.9 and its toolchain ([86bb16c](https://github.com/sava-software/http-servers/commit/86bb16cbbdb607ea01a37c802fb56f1c275874b4))
+* **pitest:** add audited timeout sets for handlers, dispatch, and logging ([a0c1403](https://github.com/sava-software/http-servers/commit/a0c140393fe0a68f89ffc7bded73b72365d22101))
+
+
+### Bug Fixes
+
+* **hardening:** audit two load-dependent timeouts, adopt PIT 1.25.9 population ([cb63671](https://github.com/sava-software/http-servers/commit/cb63671dfa1ed61410333d2e11ccf198760a4c96))
+* **hardening:** retire the fusionauth null-origin timeout membership ([4a5e391](https://github.com/sava-software/http-servers/commit/4a5e3911018d18bdda9d765504e8b2a66ce724e3))
+
+
+### Miscellaneous Chores
+
+* release 25.3.0 ([bc83b4c](https://github.com/sava-software/http-servers/commit/bc83b4cb1d108537c34a2c45fc18b5d0d8b160c9))
+
 ## [25.2.0](https://github.com/sava-software/http-servers/compare/25.1.1...25.2.0) (2026-07-24)
 
 
