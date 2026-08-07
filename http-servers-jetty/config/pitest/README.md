@@ -226,15 +226,20 @@ no HTTP client at all and therefore has no fixture bound whatsoever.
   `startOnAnOccupiedPortThrows` with both line-34 siblings. Its value is that
   the property now has an oracle that cannot time out.
 
-  **The leak itself is still owed.** Removing it needs a way to stop a started
-  server, and `HttpServer` exposes only `start()` — which is why this was a
-  *missing capability* and not a quick fix. The candidates are widening
-  `HttpServer` with `stop()`/`close()` (a production API addition, weighed
-  against it being the first production change since 25.2.0) or restructuring
-  `startOnAnOccupiedPortThrows` onto the protected `initRestServer` /
-  `setController` / `createServer(RS)` triple so the test owns the Jetty
-  `Server` and can stop it, at the cost of no longer driving the public
-  `createServer(Executor, String, int)` from this case.
+  **The leak is fixed at its source (2026-08-07).** It was never a sloppy test:
+  `HttpServer` exposed only `start()`, so no caller — test or consumer — could
+  reclaim a started server. That gap is now closed. `HttpServer` gained
+  `stop()` and extends `AutoCloseable`, `JettyHttpServer.stop()` delegates to
+  Jetty's `Server.stop()` (which tolerates the FAILED state a bind conflict
+  leaves), and `startOnAnOccupiedPortThrows` now stops the server in a
+  `finally`. The wildcard acceptor a host-guard mutant starts is reclaimed
+  immediately, so the contamination this row was arguing about cannot recur.
+
+  The suite population therefore moves 72 → 73, the newcomer being
+  `JettyHttpServer.stop`'s `VoidMethodCallMutator`, killed by
+  `aStoppedServerRefusesConnections` — which starts a server, asserts it
+  answers, closes it via try-with-resources and asserts the port then refuses.
+  No accepted row was added, refreshed or re-argued.
 
 - `JettyCachedJsonResponseHandler.handle` 26 (`VoidMethodCallMutator`) — the
   same shape on the cached-JSON path.

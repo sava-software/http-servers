@@ -44,7 +44,8 @@ module's `config/pitest/README.md`. The parts that bite most often:
   licence changes is *reuse*, never the population: `com.arcmutate:base` stays
   on PIT's tool classpath whenever `arcmutate-licence.txt` is present, so
   ordinary runs, `-PnoMutationHistory` runs and certification all mutate the
-  same set — jetty `dispatch` reads 72 in every mode (verified 2026-08-03).
+  same set — jetty `dispatch` reads 73 in every mode (72 until `HttpServer.stop()`
+  landed 2026-08-07; verified 2026-08-03).
   Only the `[history]` marker and the reuse behind it differ. Keep the licence
   committed so local and CI agree; a *count* that moves between runs is drift
   to chase, not a licence artifact. The process itself does not require
@@ -334,7 +335,7 @@ method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
   `BaseHandlerWiring` (owned by `pitestWiring`), against `server.*Test*`. Covers the
   builder's trailing-slash aliasing, method routing, controller snapshotting, the
   factory service lookup (probe-and-branch, see above) and registration logging
-  (`BaseHttpServerBuilderTests`). 39 mutants, **100% killed**, empty baseline — keep it
+  (`BaseHttpServerBuilderTests`). 40 mutants, **100% killed**, empty baseline — keep it
   that way.
 - `./gradlew :http-servers-core:pitestResponse` — PIT over the `response` package
   (`HttpResponse` factories and `withHeader` copy semantics, `HttpResponseTests`) and,

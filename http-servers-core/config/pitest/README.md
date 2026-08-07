@@ -101,7 +101,8 @@ this suite's test scope rather than a silent widening.
 ## server suite — no accepted mutants
 
 `server-accepted.csv` was retired 2026-08-02 and the suite runs at 100%
-(39 mutants). Keep it that way.
+(40 mutants; 39 until the `HttpServer.close()` default landed 2026-08-07, killed by
+`closeStopsTheServerAndStartsNothing`). Keep it that way.
 
 The registration-breadcrumb `VoidMethodCallMutator`s (`addQueryHandler`,
 `addPathHandler`) were killed 2026-07-22 by

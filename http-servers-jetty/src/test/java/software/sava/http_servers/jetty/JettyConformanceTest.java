@@ -581,12 +581,62 @@ final class JettyConformanceTest {
   /// converts that into the throw this case pins.)
   @Test
   void startOnAnOccupiedPortThrows() throws Exception {
-    try (final var occupant = new ServerSocket(0, 50, java.net.InetAddress.getByName("localhost"))) {
+    try (final var occupant = new ServerSocket(0, 50, java.net.InetAddress.getByName("localhost"));
+         final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       final var builder = new JettyServerBuilderFactory().createBuilder();
       builder.blockingQueryHandler("/x", request -> HttpResponse.response("text/plain", "x"));
-      org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
-          () -> builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", occupant.getLocalPort()).start(),
-          "a server that cannot bind must throw, never report success silently");
+      final var server = builder.createServer(executor, "localhost", occupant.getLocalPort());
+      try {
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+            server::start,
+            "a server that cannot bind must throw, never report success silently");
+      } finally {
+        // A mutant that drops the host guard binds the wildcard, dodges the conflict and
+        // leaves a live acceptor this test never expected to exist. Before HttpServer had
+        // stop() there was no way to reclaim it, and the leak raced PIT's watchdog.
+        server.stop();
+      }
+    }
+  }
+
+  private record OwnedServer(software.sava.http_servers.core.server.HttpServer server, int port) {
+  }
+
+  /// Like [#start], but hands the server back so the caller owns its lifecycle.
+  private static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
+                                        final java.util.concurrent.Executor executor) throws Exception {
+    for (int attempt = 0; ; ++attempt) {
+      final int port = freePort();
+      final var server = builder.createServer(executor, "localhost", port);
+      try {
+        server.start();
+        return new OwnedServer(server, port);
+      } catch (final Exception e) {
+        server.stop();
+        if (attempt == 2 || !lostThePortRace(e)) {
+          throw e;
+        }
+      }
+    }
+  }
+
+  /// A stopped server releases its port — the other half of the lifecycle, and the reason
+  /// `HttpServer` is `AutoCloseable`.
+  @Test
+  void aStoppedServerRefusesConnections() throws Exception {
+    try (final var executor = Executors.newVirtualThreadPerTaskExecutor();
+         final var client = HttpClient.newHttpClient()) {
+      final var builder = new JettyServerBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/x", request -> HttpResponse.response("text/plain", "x"));
+      final var owned = startOwned(builder, executor);
+      final var server = owned.server();
+      try (server) {
+        assertEquals(200, get(client, owned.port(), "/x").statusCode(),
+            "the server must answer while running");
+      }
+      org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException.class,
+          () -> get(client, owned.port(), "/x"),
+          "a stopped server must refuse connections, not keep answering");
     }
   }
 

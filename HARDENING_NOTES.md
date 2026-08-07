@@ -32,16 +32,28 @@ edges the ratchet cannot see.
   load-dependent; a quiet run on one row is not the family settling.
   Since sava-build 21.5.25 a *finite* `KILLED <-> TIMED_OUT` race is no longer
   admissible as `cause:liveness`: it is `cause:harness`, which does not certify,
-  and it is repaired or retimed rather than admitted. Two audited rows sit on
-  that line and are carried as named review items rather than relabelled during
-  the 21.5.25 adoption (the relabel would block certification, and the
-  simultaneous uncommitted Gradle 9.7 / Solana BOM work confounds fresh timing
-  evidence): jetty `initRestServer` 34 and jdk `JdkQueryHandler.process` 79.
-  Jetty 34 was re-measured on 2026-08-07 under 21.5.25 — `KILLED` solo and
-  history-free, identical under `-PisolateMutants` (so no isolation-only kill
-  and no contaminated evidence), and `KILLED` again for both siblings under the
-  full twelve-suite certification. The race does not reproduce on this
-  toolchain. Jdk 79's finite reading is still only conjectured.
+  and it is repaired or retimed rather than admitted. Two audited rows sat on
+  that line — jetty `initRestServer` 34 and jdk `JdkQueryHandler.process` 79.
+  Jetty 34 was re-measured 2026-08-07 under 21.5.25 (`KILLED` solo and
+  history-free, identical under `-PisolateMutants`, and `KILLED` for both
+  siblings under full certification), and its underlying cause — a leaked
+  acceptor the test could not reclaim — was then **fixed in production** rather
+  than relabelled; see the API note below. Jdk 79's finite reading is still only
+  conjectured and is owed a scoped history-free solo measurement.
+- **`HttpServer` gained `stop()` on 2026-08-07, and that was a product fix, not
+  a records fix.** The interface had exactly one method, `start()`, and no
+  production code anywhere could shut a server down: consumers could not release
+  a port, restart on config change, or embed a server in a test without leaking,
+  and the demo's `Entrypoint` sleeps forever because nothing else could be done
+  with the handle. Every backend already wrapped something stoppable (Jetty
+  `Server.stop()`, jdk `stop(int)`, java-http `Closeable`); the abstraction just
+  never surfaced it. `HttpServer` now declares `stop()` and extends
+  `AutoCloseable` with `close()` delegating to it. Populations moved +1 in core
+  `server` (40), jdk `dispatch` (54), jetty `dispatch` (73) and fusionauth
+  `dispatch` (56) — every newcomer killed, no accepted row added. The lesson
+  worth keeping: an audited-timeout row that keeps resisting classification is
+  worth reading as a *missing capability* before it is read as a labelling
+  problem.
 - **The 21.5.25 bump reset every quiet-run counter.** Certification printed
   `timeout-retirement stash predates fresh-only evidence bound to current
   inputs` for all five suites carrying a timeouts file: quiet-run evidence is

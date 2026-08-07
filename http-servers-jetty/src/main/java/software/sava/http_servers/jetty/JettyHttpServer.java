@@ -15,4 +15,11 @@ final class JettyHttpServer implements HttpServer {
   public void start() throws Exception {
     server.start();
   }
+
+  @Override
+  public void stop() throws Exception {
+    // Jetty's LifeCycle tolerates a stop from any state, including the FAILED one a bind
+    // conflict leaves behind, so this stays a no-op rather than a second failure.
+    server.stop();
+  }
 }

@@ -17,10 +17,29 @@ final class BaseHttpServerBuilderTests {
   private static final CachedResponse CACHED = () -> new byte[]{1};
   private static final QueryHandler QUERY = request -> HttpResponse.EMPTY;
 
+  /// Counts lifecycle calls so the interface's own `close()` default can be pinned without
+  /// a backend. Nested in the test class so the `*Test*` exclusion covers it.
+  private static final class RecordingHttpServer implements HttpServer {
+
+    private int starts;
+    private int stops;
+
+    @Override
+    public void start() {
+      ++starts;
+    }
+
+    @Override
+    public void stop() {
+      ++stops;
+    }
+  }
+
   /// Handlers are wrapped into tagged strings so tests can assert both the wrapper
   /// chosen and the map slot it landed in.
   private static final class RecordingBuilder extends BaseHttpServerBuilder<String, Object> {
 
+    private final RecordingHttpServer createdServer = new RecordingHttpServer();
     private Object initializedServer;
     private HandlerMap<String> controller;
     private String initArgs;
@@ -35,8 +54,7 @@ final class BaseHttpServerBuilderTests {
     @Override
     protected HttpServer createServer(final Object server) {
       assertSame(initializedServer, server, "createServer must receive the initialized server");
-      return () -> {
-      };
+      return createdServer;
     }
 
     @Override
@@ -69,6 +87,24 @@ final class BaseHttpServerBuilderTests {
       assertSame(initializedServer, server, "controller must be set on the initialized server");
       this.controller = handlerMap;
     }
+  }
+
+  @Test
+  void closeStopsTheServerAndStartsNothing() throws Exception {
+    final var server = new RecordingHttpServer();
+    server.close();
+    assertEquals(1, server.stops, "close() must delegate to stop()");
+    assertEquals(0, server.starts, "close() must not start anything");
+  }
+
+  @Test
+  void aBuiltServerIsCloseable() throws Exception {
+    final var builder = new RecordingBuilder();
+    try (final var server = builder.createServer(Runnable::run, "localhost", 8080)) {
+      server.start();
+    }
+    assertEquals(1, builder.createdServer.starts, "try-with-resources must not swallow start()");
+    assertEquals(1, builder.createdServer.stops, "leaving the block must stop the server");
   }
 
   @Test

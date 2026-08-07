@@ -60,4 +60,11 @@ final class FusionAuthHttpServer implements HttpServer {
           "java-http failed to start a listener; its start() logs the failure instead of throwing", thrown);
     }
   }
+
+  @Override
+  public void stop() {
+    // java-http models shutdown as Closeable rather than a stop(); it is idempotent and
+    // safe on a server whose start() logged a bind failure and returned a dead instance.
+    server.close();
+  }
 }
