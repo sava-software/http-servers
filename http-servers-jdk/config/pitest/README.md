@@ -34,9 +34,10 @@ reading as "detected". The eight rows collapse to five line-less members, all
 test client blocks on a socket read that the mutated path never satisfies — so
 none is the straight-line path the 21.5.25 doctrine refuses as liveness
 evidence. Membership and cause are key-level, so the `cause:liveness` token
-claims every sibling under each of these keys; none is a proven mixed key
-today, and if one is ever shown to mix liveness with a finite cause the repair
-is to split it into distinct method keys, not to annotate a line. The line
+claims every sibling under each of these keys; none is a mixed key, which would
+need two siblings *timing out* for different structural reasons rather than
+merely a killed sibling sharing a key. If one is ever shown to mix causes the
+repair is to split it into distinct method keys, not to annotate a line. The line
 values named here are diagnostic pointers only — moving the dispatch path never
 warns, fails, or requires re-anchoring.
 

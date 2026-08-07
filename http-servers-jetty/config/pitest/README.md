@@ -131,9 +131,11 @@ still read as "detected", which is why membership is audited rather than
 counted. The seven rows collapse to four line-less members, all recorded
 `cause:liveness` — but see the standing 21.5.25 exception on `initRestServer`
 34 below. Membership and cause are key-level, so the `cause:liveness` token
-claims every sibling under each key; none of the four is a proven mixed key
-today, and a proven mixture would be repaired by splitting the identity into
-distinct method keys, never by annotating a line. The line values below are
+claims every sibling under each key; none of the four is a mixed key, which
+would need two siblings *timing out* for different structural reasons rather
+than merely a killed sibling sharing a key. A proven mixture would be repaired
+by splitting the identity into distinct method keys, never by annotating a
+line. The line values below are
 diagnostic pointers only — moving the write paths never warns, fails, or
 requires re-anchoring.
 

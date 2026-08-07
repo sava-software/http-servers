@@ -61,8 +61,9 @@ completion, i.e. a real loop rather than the straight-line path the
 21.5.25 doctrine refuses as liveness evidence. These are in-process scans, so
 no fixture bound is in play at all: nothing here waits on a socket, and the
 suite runs no HTTP client. Membership and cause are key-level, so the
-`cause:liveness` token claims every sibling under each key; none of these
-three keys is a proven mixed key today (contrast the `logging` suite below).
+`cause:liveness` token claims every sibling under each key; no key here is a
+mixed key — that needs two siblings timing out for *different* structural
+reasons, not merely a finite sibling sharing the key.
 The `# line` values are diagnostic pointers only; source movement never warns,
 fails, or needs re-anchoring.
 
@@ -167,28 +168,24 @@ scan. The line values are diagnostic only and never need re-anchoring when
   — soften that assertion and these two would still read as detected.
   Which of the two reads `TIMED_OUT` on a given run is load-dependent (one
   detected outright, 2026-08-03); 2 timed out is the steady state.
-- **This key is a proven mixed key — the repo's only one.** Line 75
-  (`sb.append(stringify(values[next++]))`) is the same mutator in the same
+- **A third mutant shares this key and must not inherit its argument.** Line
+  75 (`sb.append(stringify(values[next++]))`) is the same mutator in the same
   method, but `next` is the *argument* cursor, not the loop cursor: reversing
   it re-reads the previous value instead of spinning, so it is killed
   outright by `logFormatSubstitutesBeforeEmitting` asserting the substituted
-  text. Liveness (69, 80) and a finite cause (75) therefore share one
-  `class,method,mutator` identity.
-  **Under sava-build 21.5.25 that is a stop, not a documented blind spot.**
-  Membership and cause are key-level, so the `cause:liveness` token claims
-  line 75 as well; a `TIMED_OUT` at 75 would pass the audit silently. The
-  earlier note here — "a `TIMED_OUT` at 75 is a reviewer-stop" — was a
-  source-line qualifier, and the doctrine refuses those: they cannot fix the
-  key's identity without making formatting a release gate, and nothing in the
-  tooling enforces one. The honest repair is to split the identity: extract
-  the two loop-cursor advances into their own method (or eliminate the manual
-  progress-mutation site) so the liveness members carry a distinct method key
-  from the argument cursor, then re-observe history-free in both modes. That
-  refactor is **deliberately not done in the 21.5.25 adoption pass**
-  (2026-08-07): it is a production change to `BaseJulLogger`, and the
-  simultaneous uncommitted Gradle 9.7 / Solana BOM work confounds any fresh
-  timing evidence it would have to be judged against. Carry it as the named
-  missing capability for this suite.
+  text. It is named here only because the line-less key would admit it
+  silently — a `TIMED_OUT` at 75 is **not** covered by the argument above and
+  is a reviewer-stop, since nothing about that statement can hang.
+
+  This key is **not** a mixed key under 21.5.25, and an earlier revision of
+  this file wrongly said it was (corrected 2026-08-07 by sava-build). A
+  `cause:` explains a `TIMED_OUT`; a key becomes unrepresentable only when two
+  or more siblings *actually time out* for different structural reasons. Line
+  75 never times out, so it asserts no cause and conflicts with nothing — 69
+  and 80 time out for one and the same reason, which `cause:liveness`
+  describes honestly. What remains is the ordinary key-level blind spot, which
+  is exactly why the paragraph above names line 75: the audit is key-level and
+  cannot flag it, so a human reading this file has to.
 - This key is also the repo's `MEMORY_ERROR` risk: the mutated scan grows the
   `StringBuilder` while the cursor stands still, so it races the heap against
   the watchdog. Liveness authorizes a valid `TIMED_OUT` only — if a

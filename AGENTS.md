@@ -200,11 +200,14 @@ module's `config/pitest/README.md`. The parts that bite most often:
   key.** A key *proven* to mix liveness and finite causes is not representable as an honest
   certifying row: split or refactor it into distinct method keys, or eliminate the ambiguous
   site, then re-observe history-free — a source-line qualifier cannot fix the identity
-  without making formatting a release gate. Core `logging` holds this repo's one proven
-  mixed key (`BaseJulLogger, formatPlaceholders, IncrementsMutator`: 69 and 80 are the
-  liveness members, 75's argument cursor is finite and killed outright), and that README's
-  "a `TIMED_OUT` at 75 is a reviewer-stop" note is precisely the line qualifier this rule
-  refuses — nothing in the tooling enforces it. Positive multiplicity drift prints the
+  without making formatting a release gate. **Read that rule precisely: a `cause:` explains
+  a `TIMED_OUT`, so a key is only mixed when two or more of its siblings actually time out
+  for different structural reasons.** A sibling that is consistently `KILLED` asserts no
+  cause and conflicts with nothing, however finite its behaviour — no key in this repo is
+  mixed today. What a killed sibling does leave is the ordinary key-level blind spot: if it
+  ever *did* time out, membership would absorb it silently. Name such siblings in the
+  module README (core `logging`'s line 75 is the one worth knowing about) so a human
+  reviewer catches what the key-level audit cannot. Positive multiplicity drift prints the
   line-full candidates for review.
 - **Retiring a timeout row.** For an otherwise admissible liveness member, wait for the
   tool's own 3-or-more distinct fresh full-run quiet notice over *identical* evidence

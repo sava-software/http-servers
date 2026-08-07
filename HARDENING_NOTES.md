@@ -62,14 +62,19 @@ edges the ratchet cannot see.
   three, so no timeout row can be retired on tool evidence until two further
   certifications run on unchanged inputs. Expect the same reset on the next
   plugin bump; it is the rule working, not drift.
-- **One proven mixed timeout key.** Core `logging`'s
-  `BaseJulLogger, formatPlaceholders, IncrementsMutator` holds two liveness
-  members (the loop cursor, lines 69 and 80) and one finite sibling killed
-  outright (the argument cursor, line 75). 21.5.25 treats a proven mixed key as
-  not representable as an honest certifying row, and refuses the source-line
-  qualifier the README used to lean on. The repair is to split the identity into
-  distinct method keys; it is owed, and deliberately deferred out of the
-  adoption pass for the same confounding reason.
+- **No mixed timeout keys — and the bar for one is higher than it looks.**
+  21.5.25 says a key that mixes liveness and finite causes cannot be an honest
+  certifying row. That applies only when two or more siblings *actually time
+  out* for different structural reasons: a `cause:` explains a `TIMED_OUT`, so a
+  sibling that is consistently `KILLED` asserts no cause and conflicts with
+  nothing. Core `logging`'s
+  `BaseJulLogger, formatPlaceholders, IncrementsMutator` was briefly recorded
+  here as mixed on 2026-08-07 — wrongly; sava-build corrected it the same day.
+  Its two timing-out siblings (the loop cursor, lines 69 and 80) share one
+  reason, and line 75's argument cursor is always killed. No refactor is owed.
+  What is owed is vigilance: the audit is key-level, so if line 75 ever timed
+  out the membership would absorb it silently, which is why the module README
+  names it for human reviewers.
 - **The fusionauth logging partition is a handoff, not a hole.** java-http's
   own threads log through `FusionAuthJulLogger`, so mutating the shim under
   socket tests can wedge a run past PIT's timeout (observed 40+ min,
