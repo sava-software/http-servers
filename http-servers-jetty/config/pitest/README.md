@@ -128,11 +128,23 @@ socket client waits until PIT's watchdog ends the run. The fourth
 (`initRestServer` 34) is a bind-path cause argued separately below. Detection
 here is the clock, not an assertion — weaken these tests and the timeouts
 still read as "detected", which is why membership is audited rather than
-counted. The seven rows collapse to four line-less members, all
-`cause:liveness`. Membership and cause are key-level, so a finite sibling
-sharing one of these keys is a known blind spot. The line values below are
+counted. The seven rows collapse to four line-less members, all recorded
+`cause:liveness` — but see the standing 21.5.25 exception on `initRestServer`
+34 below. Membership and cause are key-level, so the `cause:liveness` token
+claims every sibling under each key; none of the four is a proven mixed key
+today, and a proven mixture would be repaired by splitting the identity into
+distinct method keys, never by annotating a line. The line values below are
 diagnostic pointers only — moving the write paths never warns, fails, or
 requires re-anchoring.
+
+**Fixture bound (recorded per the 21.5.25 rule).** `JettyConformanceTest`'s
+requests carry `HttpRequest.timeout(Duration.ofSeconds(10))`. It is not the
+claimed oracle for any row here — the argument is PIT's watchdog — and it
+cannot fire first, since PIT's per-mutant margin is the recorded duration ×
+1.25 + 4000 ms. A bound that cannot fail first contributes no cause evidence
+either way; it is recorded so it need not be rediscovered. Note that
+`startOnAnOccupiedPortThrows`, the covering test for `initRestServer` 34, uses
+no HTTP client at all and therefore has no fixture bound whatsoever.
 
 - `JettyController.handle` 66, 75, 92, 101 (`VoidMethodCallMutator`) — 66 and
   75 drop the `Content.Sink.write` that emits the 404 and 405 JSON bodies
@@ -160,8 +172,85 @@ requires re-anchoring.
   modes means stopping any unexpectedly-started server in that test — the
   named missing capability here, and strictly better than this acceptance.
 
+  **Standing exception under sava-build 21.5.25 (recorded 2026-08-07): this
+  row's `cause:liveness` no longer holds.** The new doctrine falsifies the
+  admission on two independent grounds. First, the covering path is
+  *demonstrated* finite — the 16/16 solo `KILLED` reading above is exactly the
+  "demonstrated finite covering-path/watchdog race" the new `cause:harness`
+  category names, and such a race "is benign only to baseline arithmetic, never
+  certifying evidence"; the prescribed remedy is to repair or retime the
+  covering path, not to admit it and not to wait on the liveness-retirement
+  rule. Second, liveness may not be admitted while a synchronous state reader
+  can expose the defect without waiting, and one plainly can: the mutant's
+  whole effect is that the connector binds the wildcard instead of the
+  requested host, which the started server's own connector reports
+  synchronously — no clock, no socket, no watchdog. The leak itself is the
+  contaminated-evidence shape the new isolation bullet describes: a thread
+  whose cleanup an assertion failure skipped, diagnosable with
+  `-PmutateOnly=…:JettyServerBuilder -PnoMutationHistory` against
+  `-PmutateOnly=…:JettyServerBuilder -PisolateMutants`.
+
+  **Fresh 2026-08-07 measurement under 21.5.25, solo and history-free**
+  (`-PmutateOnly=…JettyServerBuilder -PnoMutationHistory`): 16 mutants, 15
+  killed, **`initRestServer` 34 reads `KILLED`**, and the scope carries zero
+  `TIMED_OUT`. The only survivor is line 29, the accepted `# explicit-default
+  doc` row. Repeating the same scope with `-PisolateMutants` gives an identical
+  result — 15/16, same survivor, zero `TIMED_OUT` — so there is **no
+  isolation-only kill and no contaminated evidence** in this scope today: the
+  leaked acceptor is real but is not currently changing any verdict. That
+  retires the stale 2026-08-04 16/16 as the standing solo evidence and replaces
+  it with a measurement taken on the current toolchain.
+
+  **The gate half agrees.** The full twelve-suite `hardeningCertify` of
+  2026-08-07 (fresh, history-free, `gitTree d87c754a`) read **both line-34
+  siblings `KILLED`**. The suite's six `TIMED_OUT` mutants that run are all in
+  the other three audited keys — `JettyController.handle` 66/75/92/101,
+  `JettyQueryHandler.handle` 42, `JettyCachedJsonResponseHandler.handle` 26.
+  So across solo, isolated and gate load on the current toolchain the finite
+  race does not reproduce, and this member is quiet.
+
+  **It is not retired yet, and the reason is mechanical rather than a judgment
+  call.** The same certification printed `timeout-retirement stash predates
+  fresh-only evidence bound to current inputs — the quiet-run counter resets
+  this run` for every suite carrying a timeouts file: 21.5.25 binds quiet-run
+  evidence to the input hashes, the plugin SHA is one of them, and the
+  21.5.24 → 21.5.25 bump therefore reset every counter to zero. The retirement
+  bar is three or more quiet notices over *identical* inputs, so this member
+  stands at one. Two further clean certifications on unchanged inputs retire it.
+
+  `theConnectorBindsTheRequestedHost` was added 2026-08-07 as the synchronous
+  state reader the doctrine asks you to look for: it reads the requested host
+  straight off the unstarted connector, with no socket, no watchdog and nothing
+  leaked. Measured honestly, **it does not change the kill attribution** — PIT
+  stops at the first killing test and still credits
+  `startOnAnOccupiedPortThrows` with both line-34 siblings. Its value is that
+  the property now has an oracle that cannot time out.
+
+  **The leak itself is still owed.** Removing it needs a way to stop a started
+  server, and `HttpServer` exposes only `start()` — which is why this was a
+  *missing capability* and not a quick fix. The candidates are widening
+  `HttpServer` with `stop()`/`close()` (a production API addition, weighed
+  against it being the first production change since 25.2.0) or restructuring
+  `startOnAnOccupiedPortThrows` onto the protected `initRestServer` /
+  `setController` / `createServer(RS)` triple so the test owns the Jetty
+  `Server` and can stop it, at the cost of no longer driving the public
+  `createServer(Executor, String, int)` from this case.
+
 - `JettyCachedJsonResponseHandler.handle` 26 (`VoidMethodCallMutator`) — the
   same shape on the cached-JSON path.
+
+## Slow-covering-test advisory (new in sava-build 21.5.25)
+
+Every scoped run of this suite on 2026-08-07 printed the plugin's new
+coverage-phase advisory: `JettyConformanceTest.throwingHandlerFailureIsLogged`
+took 354–373 ms against a 250 ms threshold. It is an advisory, not a failure —
+the plugin is explicit that the measurement "does not prove the test covers a
+target mutant or prescribe a remedy". Recorded here because it is the cheapest
+standing pointer at *why* this suite races the watchdog at all: it is the
+slowest covering test in the repo's slowest suite, and PIT repays that
+wall-clock cost once per mutant it covers. Retiming it is the first thing to
+try if a load-dependent `TIMED_OUT` in this suite ever needs repair rather than
+audit.
 
 Jetty's `HttpFields.Mutable.put` returns `Mutable` rather than `void`, so
 `VoidMethodCallMutator` never fires on a header write. The suite therefore

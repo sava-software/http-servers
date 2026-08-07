@@ -88,6 +88,22 @@ for retirement. No baseline writer ran: `BaselinePrune` edits accepted
 `SURVIVED`/`NO_COVERAGE` debt, not timeout membership, and both
 `FusionAuthController.handle` accepted rows are preserved.
 
+**Re-checked against sava-build 21.5.25 (2026-08-07): the retirement still
+stands, and the stricter rules reinforce it.** The new doctrine requires, for
+an *otherwise admissible liveness* member, three or more distinct fresh
+full-run quiet notices over identical evidence inputs plus confirmation under
+the relevant solo and gate loads — this retirement carried all of that. It also
+never needed that rule: the member was not a liveness member. Forcing the
+branch produces a byte-identical response, so the covering path is finite, and
+21.5.25 states that a finite race "is benign only to baseline arithmetic, never
+certifying evidence" and is repaired or retimed rather than admitted. Two
+further new rules were checked and are satisfied: the plugin's quiet stash is a
+machine-local nomination that was read, never copied or merged into any
+committed record; and this suite's conformance requests do carry a fixture
+bound — `HttpRequest.timeout(Duration.ofSeconds(10))` — which is recorded here
+for completeness but was the claimed oracle for nothing, and cannot fire before
+PIT's recorded-duration × 1.25 + 4000 ms margin.
+
 ## loggerShim suite — no accepted mutants
 
 `loggerShim-accepted.csv` is empty and the suite runs at 100% (13 mutants)

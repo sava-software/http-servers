@@ -15,7 +15,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 
 ## Quality gate & mutation ratchet
 
-<!-- hardening-template sha256:014396ea56fe -->
+<!-- hardening-template sha256:46f7174e51fb -->
 
 Full policy: sava-build's `HARDENING.md`. Each `pitest<Suite>` run diffs its unkilled
 mutants against the accepted baseline in the module's `config/pitest/<suite>-accepted.csv`
@@ -25,7 +25,12 @@ module's `config/pitest/README.md`. The parts that bite most often:
 - **Scale verification to the change.** Iterate with the module's `test` task; before
   handing off, run only the `pitest<Suite>`(s) whose mutated code the change can reach —
   including a dependent module's suite when it calls the changed API, and the owning suite
-  for test-only edits, since a weakened test is exactly what the ratchet catches.
+  for test-only edits, since a weakened test is exactly what the ratchet catches. When the
+  production-class inventory moves (add/remove/rename/move), or a suite's target/exclusion
+  globs change, also run the cheap whole-population `mutationOwnershipAudit` before handing
+  off — that audit is what refused `x402`'s previously bare `RpcTransactionSubmitter`
+  exclusion on 2026-08-03 and forced the `declineExclusionAudit` reason now recorded at the
+  registration site.
 - **The full `hardeningCertify` — every suite freshly observed, serialized,
   provenance-bound, and diffed against `config/pitest/` with strict timeout
   and ownership audits — is the pre-release mutation check, owned by the local
@@ -132,6 +137,15 @@ module's `config/pitest/README.md`. The parts that bite most often:
   the line)`: read the report's line numbers before accepting, because a genuinely new
   mutant at an accepted key is new debt, not surfaced history; refreshes seed such rows
   `# untriaged` like any other newcomer.
+- **A survivor contradicted by an existing oracle may be contaminated evidence.** Open PIT's
+  HTML **Covering tests** list, then compare the same scoped, history-free population with
+  and without isolation — `-PmutateOnly=<class> -PnoMutationHistory`, then
+  `-PmutateOnly=<class> -PisolateMutants`. An isolation-only kill means state leaked between
+  mutants: a thread, executor, handler or static fixture whose cleanup an earlier assertion
+  failure skipped. Move that teardown into `finally`/try-with-resources and re-run normally,
+  history-free; isolated execution is diagnostic evidence, never a record decision. This
+  repo has one standing instance — jetty's `startOnAnOccupiedPortThrows` leaks the server it
+  never expected to start (the jetty README's `initRestServer` 34 row).
 - **Randomized tests use fixed seeds, and never sleep**: the ratchet needs deterministic
   kills, and PIT re-runs the suite per mutant, so one real wait costs minutes. Exploration
   belongs to the fuzz targets. Time-dependent code takes a clock seam; give test clocks a
@@ -152,26 +166,68 @@ module's `config/pitest/README.md`. The parts that bite most often:
   "detecting" whatever the test asserts — so every suite that carries timeouts audits them
   as a *set*, not a count: line-less `class,method,mutator` rows in
   `config/pitest/<suite>-timeouts.csv`, each carrying a **cause category**, with the full
-  structural argument in the module's `config/pitest/README.md`. Only `cause:liveness` is
-  admissible watchdog detection — the mutated path has no path-owned finite completion
-  guarantee once deterministic seams and budgets are exhausted; a fixture's emergency exit
-  does not demote that to resource work, but the fixture bound belongs in the README.
-  `cause:resource` terminates and owes a deterministic contract test/fix or a stable
-  `SURVIVED` equivalence argument instead of watchdog detection; it and `cause:untriaged`
-  are reviewer-stops that fail strict certification. Liveness authorizes valid `TIMED_OUT`
-  only, never `MEMORY_ERROR`. The verify warns on any timed-out mutant outside the set
-  (paste the printed row, classify it, then write the cause) and on members matching no
-  mutant. Audited here: core `handlers` and `logging`, jdk `dispatch`, jetty `dispatch`,
-  fusionauth `dispatch`; the remaining suites carry no timeouts and so have no file.
+  structural argument in the module's `config/pitest/README.md`. Audited here: core
+  `handlers` and `logging`, jdk `dispatch`, jetty `dispatch`, and fusionauth `dispatch`
+  (empty and armed); the remaining suites carry no timeouts and so have no file.
   **`# line` tags are diagnostic metadata only.** They do not authorize a cause, do not
   warn, do not fail certification, and never need re-anchoring: adding a method, moving
   imports, reflowing an expression or otherwise moving source is not a hardening record
-  change. Membership and cause are key-level, which leaves a known blind spot when a
-  liveness mutant and a finite sibling share one key — positive multiplicity drift prints
-  the line-full candidates for review. Retiring a row needs
-  `pitest<Suite> -PnoMutationHistory` evidence across the relevant loads; assisted reports
-  are previews and never advance timeout status. `pitest<Suite>Debt` is the quick static
-  preview of all of this.
+  change.
+- **Only `cause:liveness` is admissible watchdog detection**, and only once deterministic
+  seams and budgets are exhausted: the mutated path must have no path-owned finite
+  completion guarantee. A straight-line path with no loop, retry, lock, wait, blocking call
+  or external completion dependency is not credible liveness evidence. Before admitting
+  one, prove the mutated path actually receives the clock or budget the test observes, and
+  check for a synchronous state reader that can expose the defect without waiting. A
+  fixture's emergency exit does not demote a liveness loss to resource work, but **the
+  fixture bound belongs in the README**: every adapter conformance test here sets
+  `HttpRequest.timeout(Duration.ofSeconds(10))`, which is not the claimed oracle for any
+  audited row and cannot fire first — PIT's per-mutant margin at these durations is
+  `recorded duration × 1.25 + 4000 ms`, comfortably under 10 s — so it contributes no cause
+  evidence in either direction. `cause:resource` terminates and owes a deterministic
+  contract test/fix or a stable `SURVIVED` equivalence argument instead of watchdog
+  detection. `cause:harness` is the explicit **non-certifying holding state** for a
+  demonstrated finite covering-path/watchdog race; it never makes a timeout admissible, and
+  with `cause:resource` and `cause:untriaged` it is a reviewer-stop that fails strict
+  certification. Liveness authorizes valid `TIMED_OUT` only, never `MEMORY_ERROR`: when a
+  non-advancing loop races the heap against the watchdog — core `logging`'s
+  `formatPlaceholders` is exactly that shape, the `StringBuilder` growing while the cursor
+  stands still — make **every** covering path fail deterministically without relying on
+  PIT's test order, or refactor the manual progress-mutation site out while preserving the
+  tested contract.
+- **Membership and cause are key-level, so a liveness token claims every sibling under that
+  key.** A key *proven* to mix liveness and finite causes is not representable as an honest
+  certifying row: split or refactor it into distinct method keys, or eliminate the ambiguous
+  site, then re-observe history-free — a source-line qualifier cannot fix the identity
+  without making formatting a release gate. Core `logging` holds this repo's one proven
+  mixed key (`BaseJulLogger, formatPlaceholders, IncrementsMutator`: 69 and 80 are the
+  liveness members, 75's argument cursor is finite and killed outright), and that README's
+  "a `TIMED_OUT` at 75 is a reviewer-stop" note is precisely the line qualifier this rule
+  refuses — nothing in the tooling enforces it. Positive multiplicity drift prints the
+  line-full candidates for review.
+- **Retiring a timeout row.** For an otherwise admissible liveness member, wait for the
+  tool's own 3-or-more distinct fresh full-run quiet notice over *identical* evidence
+  inputs, and confirm the absence under the relevant solo *and* gate loads — fusionauth's
+  2026-08-05 retirement met that bar. The quiet stash is a machine-local nomination: never
+  copy or merge it, and retain the row whenever a same-input gate confirmation is
+  unavailable. A *finite* `KILLED`↔`TIMED_OUT` race is a different animal — benign to
+  baseline arithmetic, never certifying evidence — so repair or retime its covering path
+  instead of admitting it or waiting on the liveness-retirement rule. Retiming is a real
+  option here: every adapter `dispatch` suite kills through real socket round trips, which
+  makes its covering paths the slowest in the repo and the ones that race the watchdog —
+  21.5.25 prints a coverage-phase advisory naming the slowest one per suite (jetty's
+  `throwingHandlerFailureIsLogged`, 354–373 ms against a 250 ms threshold, measured
+  2026-08-07). It is advisory only: it does not prove the named test covers a target mutant
+  and does not prescribe a remedy, but it is the cheapest pointer at which covering path to
+  retime first. The
+  verify warns on any timed-out mutant outside the set (paste the printed row, classify it,
+  then write the cause) and on members matching no mutant. `TimeoutAuditInit` deliberately
+  seeds an uncertifiable file — classify every row before certification. A `[history]`
+  report may check the ratchet but can never support adding, removing or relabelling an
+  accepted or timeout record: run `pitest<Suite> -PnoMutationHistory` first. Assisted
+  reports are previews and never advance timeout status or quiet-run evidence.
+  `pitest<Suite>Debt` is the quick static preview of all of this, and `-PstrictTimeoutAudit`
+  escalates incomplete evidence.
 - **A flaky harness is worse than recorded debt.** If an interleaving or a boundary cannot
   be made deterministic, accept the mutant with a written reason rather than chasing it
   with sleeps or spin-waits. Allocation and timing harnesses are a last resort, reserved
@@ -224,14 +280,18 @@ module's `config/pitest/README.md`. The parts that bite most often:
   getting narrower is a bug report — real speedups come from fewer mutants or faster
   covering tests (exception: a summary carrying the `[history]` marker is arcmutate
   incremental reuse, where fast is expected; `hardeningCertify` never carries it).
-- **Transient infra failures are not results.** PIT `MINION_DIED` fails before writing a
+- **Invalid execution outcomes are not results.** PIT `MINION_DIED` fails before writing a
   report, so it cannot corrupt one — re-run the suite; a Gradle-worker `EOFException`
-  death is the same shape, and a per-mutant `RUN_ERROR` under load is the same shape
-  smaller: the hardening parser refuses the report outright rather than certifying PIT's
-  detected score around the hole. The refusal and `pitest<Suite>Debt` name every offending
-  row — **retain every `RUN_ERROR` coordinate before a quiet re-run overwrites the
-  report**, because the same coordinate surfacing twice is a defect in that mutant's
-  covering test, not load. The daemon log
+  death is the same shape, and a per-mutant `RUN_ERROR` first seen in a multi-suite run is
+  the same shape smaller (load average by itself proves nothing): the hardening parser
+  refuses the report outright rather than certifying PIT's detected score around the hole.
+  The refusal and `pitest<Suite>Debt` name every offending row — **retain every `RUN_ERROR`
+  coordinate before a quiet re-run overwrites the report**. `RUN_ERROR` alone diagnoses
+  neither load nor memory and never justifies changing thread counts or heap: record
+  load/RSS as context, retry once quietly, and tune only when PIT explicitly diagnoses a
+  process-resource failure. A repeat at the same coordinate is not evidence of load either
+  — investigate the mutated bytecode, its covering tests and the tool failure (x402's
+  2026-07-24 `NAKED_RECEIVER` trial produced one such row). The daemon log
   (`~/.gradle/daemon/<version>/daemon-<pid>.out.log`) keeps a failed build's full output
   even when the shell discarded it — read it before calling a failure unexplained.
 - Fuzz findings become a committed seed input **and** a named regression test, never just

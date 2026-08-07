@@ -57,10 +57,14 @@ weakened covering assertion behind one — the three members are audited by
 timed-out mutant outside the set is a reviewer-stop: identify the cause,
 paste the printed row, classify it, then write it here. All three are
 `cause:liveness` — each is a non-advancing scan with no path-owned finite
-completion. Membership and cause are key-level, so a liveness mutant and a
-finite sibling sharing one key is a known blind spot. The `# line` values are
-diagnostic pointers only; source movement never warns, fails, or needs
-re-anchoring.
+completion, i.e. a real loop rather than the straight-line path the
+21.5.25 doctrine refuses as liveness evidence. These are in-process scans, so
+no fixture bound is in play at all: nothing here waits on a socket, and the
+suite runs no HTTP client. Membership and cause are key-level, so the
+`cause:liveness` token claims every sibling under each key; none of these
+three keys is a proven mixed key today (contrast the `logging` suite below).
+The `# line` values are diagnostic pointers only; source movement never warns,
+fails, or needs re-anchoring.
 
 - `PathCanonicalizer.canonicalize` 64 (`IncrementsMutator`) — `i += 2`, the
   skip past the two hex digits of a `%XX` escape, becomes `i -= 2`: the scan
@@ -151,9 +155,8 @@ unioned into the baseline.
 Both timed-out rows collapse to one audited member —
 `BaseJulLogger, formatPlaceholders, IncrementsMutator` (`cause:liveness`) at
 lines 69 and 80 — the two lines are the same structural mistake in the same
-scan. Membership and cause are key-level, so a finite sibling at this key
-would be a blind spot. The line values are diagnostic only and never need
-re-anchoring when `formatPlaceholders` moves.
+scan. The line values are diagnostic only and never need re-anchoring when
+`formatPlaceholders` moves.
 
 - 69 is the `i++` that skips the `{` of an escaped `\{`; 80 is the `i++` that
   skips the `}` of a `{}` placeholder. Reversed to `i--`, the loop's own
@@ -163,11 +166,31 @@ re-anchoring when `formatPlaceholders` moves.
   — soften that assertion and these two would still read as detected.
   Which of the two reads `TIMED_OUT` on a given run is load-dependent (one
   detected outright, 2026-08-03); 2 timed out is the steady state.
-- **A third mutant shares this key and must not inherit its argument.** Line
-  75 (`sb.append(stringify(values[next++]))`) is the same mutator in the same
+- **This key is a proven mixed key — the repo's only one.** Line 75
+  (`sb.append(stringify(values[next++]))`) is the same mutator in the same
   method, but `next` is the *argument* cursor, not the loop cursor: reversing
   it re-reads the previous value instead of spinning, so it is killed
   outright by `logFormatSubstitutesBeforeEmitting` asserting the substituted
-  text. It is named here only because the line-less key would admit it
-  silently — a `TIMED_OUT` at 75 is **not** covered by the argument above and
-  is a reviewer-stop, since nothing about that statement can hang.
+  text. Liveness (69, 80) and a finite cause (75) therefore share one
+  `class,method,mutator` identity.
+  **Under sava-build 21.5.25 that is a stop, not a documented blind spot.**
+  Membership and cause are key-level, so the `cause:liveness` token claims
+  line 75 as well; a `TIMED_OUT` at 75 would pass the audit silently. The
+  earlier note here — "a `TIMED_OUT` at 75 is a reviewer-stop" — was a
+  source-line qualifier, and the doctrine refuses those: they cannot fix the
+  key's identity without making formatting a release gate, and nothing in the
+  tooling enforces one. The honest repair is to split the identity: extract
+  the two loop-cursor advances into their own method (or eliminate the manual
+  progress-mutation site) so the liveness members carry a distinct method key
+  from the argument cursor, then re-observe history-free in both modes. That
+  refactor is **deliberately not done in the 21.5.25 adoption pass**
+  (2026-08-07): it is a production change to `BaseJulLogger`, and the
+  simultaneous uncommitted Gradle 9.7 / Solana BOM work confounds any fresh
+  timing evidence it would have to be judged against. Carry it as the named
+  missing capability for this suite.
+- This key is also the repo's `MEMORY_ERROR` risk: the mutated scan grows the
+  `StringBuilder` while the cursor stands still, so it races the heap against
+  the watchdog. Liveness authorizes a valid `TIMED_OUT` only — if a
+  `MEMORY_ERROR` ever appears here, the fix is to make **every** covering path
+  fail deterministically without relying on PIT's test order, or to refactor
+  the progress-mutation site out, not to widen the audit.

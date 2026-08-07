@@ -1,5 +1,6 @@
 package software.sava.http_servers.jetty;
 
+import org.eclipse.jetty.server.ServerConnector;
 import org.junit.jupiter.api.Test;
 import software.sava.http_servers.core.response.HttpResponse;
 
@@ -586,6 +587,25 @@ final class JettyConformanceTest {
       org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
           () -> builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", occupant.getLocalPort()).start(),
           "a server that cannot bind must throw, never report success silently");
+    }
+  }
+
+  /// The connector must bind the host it was given, never the wildcard — read synchronously
+  /// off the unstarted connector, with no socket, no clock and nothing to clean up.
+  /// `startOnAnOccupiedPortThrows` above reaches the same property through a bind conflict,
+  /// but only by racing PIT's watchdog, and when the host guard is mutated away that case
+  /// starts a server it never expected to exist and cannot stop it, since `HttpServer`
+  /// exposes only `start()`. PIT stops at the first killing test and still attributes the
+  /// line-34 kill to that case, so this one does not replace it; it pins the property
+  /// against an oracle that cannot time out, and keeps it pinned if that case is ever
+  /// retimed or reshaped.
+  @Test
+  void theConnectorBindsTheRequestedHost() {
+    try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      final var server = new JettyServerBuilder().initRestServer(executor, "localhost", 0);
+      final var connector = (ServerConnector) server.getConnectors()[0];
+      assertEquals("localhost", connector.getHost(),
+          "initRestServer must apply the requested host to the connector");
     }
   }
 }

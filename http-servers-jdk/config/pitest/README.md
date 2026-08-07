@@ -30,10 +30,24 @@ ends the run. The fifth (`process` 79) blocks the client a different way and
 is argued separately below. That is exactly the blind spot the audited set
 exists for: weaken any of these tests to uselessness and the timeouts keep
 reading as "detected". The eight rows collapse to five line-less members, all
-`cause:liveness`. Membership and cause are key-level, so a finite sibling
-sharing one of these keys is a known blind spot. The line values named here
-are diagnostic pointers only — moving the dispatch path never warns, fails, or
-requires re-anchoring.
+`cause:liveness`. Every one of them is an external completion dependency — the
+test client blocks on a socket read that the mutated path never satisfies — so
+none is the straight-line path the 21.5.25 doctrine refuses as liveness
+evidence. Membership and cause are key-level, so the `cause:liveness` token
+claims every sibling under each of these keys; none is a proven mixed key
+today, and if one is ever shown to mix liveness with a finite cause the repair
+is to split it into distinct method keys, not to annotate a line. The line
+values named here are diagnostic pointers only — moving the dispatch path never
+warns, fails, or requires re-anchoring.
+
+**Fixture bound (recorded per the 21.5.25 rule).** `JdkConformanceTest`'s
+requests carry `HttpRequest.timeout(Duration.ofSeconds(10))`. It is *not* the
+claimed oracle for any row above — the argument is PIT's watchdog, not the
+client — and it cannot fire first: PIT's per-mutant margin here is the
+recorded duration × 1.25 + 4000 ms, a few seconds at these durations. A bound
+that cannot fail first contributes no cause evidence in either direction, so
+it neither supports nor weakens the five members; it is recorded so the next
+reviewer does not have to rediscover it.
 
 - `JdkQueryHandler.handle` 44, 46 (`VoidMethodCallMutator`) — 44 drops
   `process(exchange)` on the blocking branch, 46 drops the
@@ -60,7 +74,15 @@ requires re-anchoring.
   promised body. Admitted 2026-08-04, first observed timing out under
   certification load having previously read as detected; load-dependent like
   the rest of this module's dispatch family, so a solo run may show it killed
-  by the body assertion instead.
+  by the body assertion instead. **Open under 21.5.25** (2026-08-07): "may show
+  it killed" is a conjecture, never a measurement. If a scoped history-free
+  solo run demonstrates a `KILLED` reading, this stops being liveness and
+  becomes a finite `KILLED`↔`TIMED_OUT` race — `cause:harness`, non-certifying,
+  repaired by retiming or fixing the covering path rather than admitted. Unlike
+  jetty's `initRestServer` 34 the finite reading here has *not* been
+  demonstrated, so the row stays `cause:liveness`; measure it (solo and gate,
+  `-PnoMutationHistory`) before the next certification that is not confounded
+  by an unrelated toolchain change.
 
 The error-log `VoidMethodCallMutator`s (`JdkController.handle`,
 `JdkQueryHandler`'s executor task, `initRestServer`'s create-failure log)

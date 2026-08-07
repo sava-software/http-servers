@@ -30,6 +30,34 @@ edges the ratchet cannot see.
   timeout). Baselines hold the union, audited timeout sets name the members —
   neither is drift to "fix". Which member of a flappy family flips is itself
   load-dependent; a quiet run on one row is not the family settling.
+  Since sava-build 21.5.25 a *finite* `KILLED <-> TIMED_OUT` race is no longer
+  admissible as `cause:liveness`: it is `cause:harness`, which does not certify,
+  and it is repaired or retimed rather than admitted. Two audited rows sit on
+  that line and are carried as named review items rather than relabelled during
+  the 21.5.25 adoption (the relabel would block certification, and the
+  simultaneous uncommitted Gradle 9.7 / Solana BOM work confounds fresh timing
+  evidence): jetty `initRestServer` 34 and jdk `JdkQueryHandler.process` 79.
+  Jetty 34 was re-measured on 2026-08-07 under 21.5.25 — `KILLED` solo and
+  history-free, identical under `-PisolateMutants` (so no isolation-only kill
+  and no contaminated evidence), and `KILLED` again for both siblings under the
+  full twelve-suite certification. The race does not reproduce on this
+  toolchain. Jdk 79's finite reading is still only conjectured.
+- **The 21.5.25 bump reset every quiet-run counter.** Certification printed
+  `timeout-retirement stash predates fresh-only evidence bound to current
+  inputs` for all five suites carrying a timeouts file: quiet-run evidence is
+  bound to the input hashes and the plugin SHA is one of them. Every pending
+  retirement nomination — jetty 34's included — restarts at one of the required
+  three, so no timeout row can be retired on tool evidence until two further
+  certifications run on unchanged inputs. Expect the same reset on the next
+  plugin bump; it is the rule working, not drift.
+- **One proven mixed timeout key.** Core `logging`'s
+  `BaseJulLogger, formatPlaceholders, IncrementsMutator` holds two liveness
+  members (the loop cursor, lines 69 and 80) and one finite sibling killed
+  outright (the argument cursor, line 75). 21.5.25 treats a proven mixed key as
+  not representable as an honest certifying row, and refuses the source-line
+  qualifier the README used to lean on. The repair is to split the identity into
+  distinct method keys; it is owed, and deliberately deferred out of the
+  adoption pass for the same confounding reason.
 - **The fusionauth logging partition is a handoff, not a hole.** java-http's
   own threads log through `FusionAuthJulLogger`, so mutating the shim under
   socket tests can wedge a run past PIT's timeout (observed 40+ min,
