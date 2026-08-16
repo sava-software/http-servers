@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.3.1](https://github.com/sava-software/http-servers/compare/25.3.0...25.3.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* **deps:** update solanaBOMVersion to 25.30.8 ([46eb890](https://github.com/sava-software/http-servers/commit/46eb890707d8f9445609ca8628c504a64cb837f1))
+
 ## [25.3.0](https://github.com/sava-software/http-servers/compare/25.2.0...25.3.0) (2026-08-07)
 
 
