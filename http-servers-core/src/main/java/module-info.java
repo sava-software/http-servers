@@ -8,7 +8,6 @@ module software.sava.http_servers.core {
   exports software.sava.http_servers.core.logging;
 
   requires java.logging;
-  requires jdk.httpserver;
 
   uses HttpServerBuilderFactory;
 }
