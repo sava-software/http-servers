@@ -363,9 +363,9 @@ sponsors, so this is the most heavily tested surface.
   verifier, settler, cache) against `x402.*Test*`. The `RpcTransactionSubmitter` inner class
   (thin adapter over `SolanaRpcClient`, exercised only against a live node) is excluded by
   hand; the `*Fuzz` harnesses need no glob — registered fuzz targets are auto-excluded.
-  387 mutants and 97% detected under PIT 1.30.0; the additive provenance rebase retains
-  15 baseline rows (including a newly surfaced row eliminated by the shared instruction-
-  validation response refactor) with per-family reasons in `config/pitest/README.md`.
+  387 mutants and 97% detected under PIT 1.30.0; the 21.5.30 provenance rebase and
+  guarded retirement leave 10 active baseline rows with per-family reasons in
+  `config/pitest/README.md`.
   The live remainder is chiefly guards whose removal funnels to the identical error
   response and sub-states `TransactionSkeleton`'s asymmetric lazy resolution cannot
   produce (out-of-range program indices throw eagerly; account indices resolve to null;

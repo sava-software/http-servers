@@ -1,15 +1,10 @@
 software.sava.http_servers.sava.x402.SvmExactSettler,settle,NullReturnValsMutator,NO_COVERAGE # defensive re-parse # line 89
 software.sava.http_servers.sava.x402.SvmExactSettler,settle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # unreachable sub-state # line 95
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_IF,SURVIVED # unreachable sub-state # line 136
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # error funnel # line 45
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # error funnel # line 84
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_IF,SURVIVED # error funnel # line 83
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,NullReturnValsMutator,NO_COVERAGE # error funnel # line 84
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_ELSE,SURVIVED # unreachable sub-state # line 88
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_EQUAL_IF,SURVIVED # error funnel # line 87
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,ConditionalsBoundaryMutator,SURVIVED # unreachable sub-state # line 94
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable sub-state # line 94
 software.sava.http_servers.sava.x402.SvmExactVerifier,verify,RemoveConditionalMutator_ORDER_IF,SURVIVED # unreachable sub-state # line 94
 software.sava.http_servers.sava.x402.SvmExactVerifier,verifyComputeLimit,RemoveConditionalMutator_ORDER_IF,SURVIVED # brittle coincidence # line 201
 software.sava.http_servers.sava.x402.SvmExactVerifier,verifyOptionalInstructions,MathMutator,SURVIVED # reachable-domain identity # line 245
-software.sava.http_servers.sava.x402.SvmExactVerifier,verify,NullReturnValsMutator,NO_COVERAGE # rebase refactor # line 88

@@ -29,7 +29,7 @@ Both suites run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` since the scripted
 handlers — all killed by existing tests; the JSON builders and byte-array
 slicing are receiver-returning calls the default set cannot express).
 
-## x402 suite (13 keys / 15 retained rows; fresh PIT 1.30.0 result: 9 survived, 1 no_coverage)
+## x402 suite (7 keys / 10 retained rows; fresh PIT 1.30.0 result: 9 survived, 1 no_coverage)
 
 **PIT 1.25.9 population migration (2026-08-04): 388 -> 389 mutants, one new
 row, killed — the baseline is unchanged.** The newcomer is
@@ -46,7 +46,7 @@ re-argued. The lesson generalizes past this suite: **any method sharing a
 name with a record component was unmutated before 1.25.9** — re-read such
 methods here and in `handlers` when they change.
 
-### `# rebase refactor` — additive transition row eliminated before certification
+### 21.5.30 provenance rebase and guarded retirement
 
 The sava-build 21.5.30 provenance rebase (PIT 1.30.0 and ArcMutate Base
 1.7.2) initially surfaced a second `SvmExactVerifier.verify`
@@ -61,10 +61,18 @@ The three identical malformed-instruction exits were consolidated into one
 response path instead of accepting the mutant. A second fresh, full,
 history-free rebase generated 387 mutants and killed that shared return; its
 only `NO_COVERAGE` result is the already documented settler defensive
-re-parse. Rebase is intentionally additive and pruning was excluded from this
-adoption, so the now-stale transition row remains under this label. It is
-history, not authority for a future same-key mutant: any later line-drift or
-multiplicity advisory for this key requires a fresh semantic review.
+re-parse. Rebase is intentionally additive, so all five unmatched rows it
+conservatively retained remained active acceptance authority; the
+`# rebase refactor` note did not disable or retire its row.
+
+On 2026-09-02, two distinct fresh, full, history-free previews and the guarded
+third `pitestX402BaselinePrune` observation each produced the same removal
+multiset and no fresh debt: two `SvmExactVerifier.verify`
+`NullReturnValsMutator,NO_COVERAGE` rows and three
+`RemoveConditionalMutator_EQUAL_IF,SURVIVED` rows. The writer removed exactly
+those five rows, closing the transition. A retained row remains authoritative
+until this guarded prune workflow removes it; comments are review prose, never
+a hidden retirement state.
 
 `verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
 the 2026-07-24 multiset upgrade. Both twins carry the same label
@@ -89,31 +97,22 @@ committed `crash_*` corpus inputs pin both lazy shapes.
 - `SvmExactVerifier.verify` 45 (`EQUAL_ELSE`): skipping the
   `payload == null || transaction() == null` guard reaches
   `Base64.decode(null)` → NPE → the same `INVALID_PAYLOAD_TRANSACTION`.
-- `verify` 83 (both directions) and 84 (`NullReturnVals`, `NO_COVERAGE`):
-  the null-program guard. A null program is **unreachable** — the parse
-  throws first (above) and the catch returns the same error the guard
-  would. The line-84 return is therefore uncoverable in-harness; what would
-  make it live is sava-core making program resolution lazy the way account
-  resolution is. Retained as defense in depth for exactly that case.
-- `verify` 87 (`EQUAL_IF` direction): removing the `account == null` check
-  sends the reachable null account into `account.publicKey()` — an NPE
-  *inside* the try → caught → the identical decode error.
+- `SvmExactVerifier.verify` (`RemoveConditionalMutator_EQUAL_ELSE`): the
+  surviving direction of the null-program guard reaches parsing failure and
+  the catch returns the same decode error. The guard remains defense in depth
+  if sava-core ever makes program resolution lazy like account resolution.
 
 ### `# unreachable sub-state` — unreachable sub-states of live guards
 
-- `verify` 87 (`EQUAL_ELSE` direction): a non-null account with a null
-  `publicKey()` never occurs — lazy resolution yields null accounts, never
-  null-key accounts. The live direction of this guard is pinned by
-  `unresolvableAccountIndexRejected`.
+- `SvmExactVerifier.verify` (`RemoveConditionalMutator_EQUAL_ELSE`): a
+  non-null account with a null `publicKey()` never occurs — lazy resolution
+  yields null accounts, never null-key accounts. The live direction of this
+  guard is pinned by `unresolvableAccountIndexRejected`.
 - `verify` 93 (`ORDER_IF` ×2, `ConditionalsBoundary`): the skeleton never
   produces a negative `offset` or `len`, and `offset == 0` is structurally
   impossible (signatures precede the message). The *reachable* failure —
   an overrunning slice — has its guard-removal killed by
   `overrunningDataSliceRejected`.
-- `verify` 136 (`EQUAL_IF`): `TransferCheckedIxData.read` returns null only
-  for a null/empty array; it is always handed the full transaction bytes.
-  The discriminator half of the condition is killed by
-  `wrongTransferDiscriminator`.
 - `SvmExactSettler.settle` 95 (`EQUAL_IF`): `skeleton.feePayer()` cannot be
   null for a transaction that passed verification (verified transactions
   have a non-empty static account table; probed 2026-07-22 — even a zeroed
