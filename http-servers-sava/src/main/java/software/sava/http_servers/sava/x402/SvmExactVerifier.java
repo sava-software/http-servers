@@ -80,19 +80,23 @@ public final class SvmExactVerifier {
       // instructions with unresolved (null) programs or accounts, or data slices that overrun
       // the transaction bytes. Reject those up front: every later rule dereferences them.
       for (final var instruction : instructions) {
-        if (instruction.programId() == null || instruction.programId().publicKey() == null) {
-          return VerifyResponse.invalid(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, null);
-        }
-        for (final var account : instruction.accounts()) {
-          if (account == null || account.publicKey() == null) {
-            return VerifyResponse.invalid(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, null);
+        validation: {
+          if (instruction.programId() == null || instruction.programId().publicKey() == null) {
+            break validation;
           }
+          for (final var account : instruction.accounts()) {
+            if (account == null || account.publicKey() == null) {
+              break validation;
+            }
+          }
+          final int offset = instruction.offset();
+          final int len = instruction.len();
+          if (offset < 0 || len < 0 || offset + len > instruction.data().length) {
+            break validation;
+          }
+          continue;
         }
-        final int offset = instruction.offset();
-        final int len = instruction.len();
-        if (offset < 0 || len < 0 || offset + len > instruction.data().length) {
-          return VerifyResponse.invalid(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, null);
-        }
+        return VerifyResponse.invalid(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, null);
       }
     } catch (final RuntimeException e) {
       return VerifyResponse.invalid(X402Errors.TRANSACTION_COULD_NOT_BE_DECODED, null);

@@ -23,6 +23,19 @@ edges the ratchet cannot see.
 
 ## Repo-specific blindness edges
 
+- **Adapter conformance is one cross-backend contract.** Every adapter's
+  `*ConformanceTest` and `*PostHandlerTest` pins raw query and path exposure,
+  exact query-handler matching plus the trailing-slash alias, prefix path
+  matching, and canonical routing before lookup. Dot segments and benign
+  escapes resolve; malformed or ambiguous targets (encoded slash, backslash,
+  NUL, percent/double encoding, encoded dot segments, empty segments, and
+  root-escaping `..`) answer 400 without routing. The same suites require
+  bodyless 204/304 responses, a byte-identical 512 KiB POST, HEAD as 405 with
+  `Allow`, 500 for throwing handlers, custom status/header propagation, cached
+  JSON responses, case-insensitive header lookup, a never-null body, and CORS
+  pre-flight handling (a blank requested method is not a pre-flight). These
+  are socket-level oracles shared by all three backends, not framework-local
+  conveniences.
 - **Socket kills are load-sensitive.** Every adapter dispatch suite kills
   through real socket round trips, so detection wall clock rides on gate
   parallelism: coordinates flip `SURVIVED <-> TIMED_OUT` under `qualityGate`
@@ -54,14 +67,15 @@ edges the ratchet cannot see.
   worth keeping: an audited-timeout row that keeps resisting classification is
   worth reading as a *missing capability* before it is read as a labelling
   problem.
-- **The 21.5.25 bump reset every quiet-run counter.** Certification printed
-  `timeout-retirement stash predates fresh-only evidence bound to current
-  inputs` for all five suites carrying a timeouts file: quiet-run evidence is
-  bound to the input hashes and the plugin SHA is one of them. Every pending
-  retirement nomination — jetty 34's included — restarts at one of the required
-  three, so no timeout row can be retired on tool evidence until two further
-  certifications run on unchanged inputs. Expect the same reset on the next
-  plugin bump; it is the rule working, not drift.
+- **The 21.5.25 bump reset every quiet-run counter because the captured
+  evidence inputs changed.** Certification printed `timeout-retirement stash
+  predates fresh-only evidence bound to current inputs` for all five suites
+  carrying a timeouts file. sava-build 21.5.30 makes the durable rule explicit:
+  a plugin fingerprint change alone does not reset retirement evidence when
+  semantics are unchanged; captured PIT-input changes do, and an unmodeled
+  semantic change requires a timeout-quiet format bump. This adoption changes
+  PIT and ArcMutate Base, so its fresh certification is the new evidence
+  boundary; do not infer a reset from a future version-number-only bump.
 - **No mixed timeout keys — and the bar for one is higher than it looks.**
   21.5.25 says a key that mixes liveness and finite causes cannot be an honest
   certifying row. That applies only when two or more siblings *actually time
@@ -116,7 +130,9 @@ edges the ratchet cannot see.
   exercises core's provider path end-to-end but cannot kill core rows —
   cross-module tests are outside the owning suite's pattern. That is why the
   probe-and-branch fixture lives in core's own test sources.
-- **No fuzz workflow, on purpose.** Long fuzz campaigns are a local
-  release-checklist item here, recorded with the budget used; a manual GitHub
-  campaign may be added for optional exploration, but this repo does not treat
-  one as release evidence. (Task semantics: `hardeningHelp`.)
+- **No fuzz workflow, on purpose.** CI owns `check`; the local release checklist
+  owns `hardeningCertifyAll` (six project receipts, twelve suites, no running
+  sentinel) and `fuzzAll` (all five registered targets). Record both
+  `maxFuzzTime` and `maxParallelFuzzTargets`. A manual GitHub campaign may be
+  added for optional exploration, but this repo does not treat one as release
+  evidence. (Task semantics: `hardeningHelp`.)

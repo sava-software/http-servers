@@ -29,7 +29,7 @@ Both suites run `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` since the scripted
 handlers — all killed by existing tests; the JSON builders and byte-array
 slicing are receiver-returning calls the default set cannot express).
 
-## x402 suite (13 keys / 14 rows: 12 survived, 2 no_coverage)
+## x402 suite (13 keys / 15 retained rows; fresh PIT 1.30.0 result: 9 survived, 1 no_coverage)
 
 **PIT 1.25.9 population migration (2026-08-04): 388 -> 389 mutants, one new
 row, killed — the baseline is unchanged.** The newcomer is
@@ -45,6 +45,26 @@ difference in the whole suite is that one row. Unkilled is unchanged at 11
 re-argued. The lesson generalizes past this suite: **any method sharing a
 name with a record component was unmutated before 1.25.9** — re-read such
 methods here and in `handlers` when they change.
+
+### `# rebase refactor` — additive transition row eliminated before certification
+
+The sava-build 21.5.30 provenance rebase (PIT 1.30.0 and ArcMutate Base
+1.7.2) initially surfaced a second `SvmExactVerifier.verify`
+`NullReturnValsMutator,NO_COVERAGE` sibling for the malformed-account return.
+It was not equivalent: verification must always return a non-null decode
+failure for an unresolved instruction account, and
+`SvmExactVerifierTest.unresolvableAccountIndexRejected` independently asserts
+both invalidity and `TRANSACTION_COULD_NOT_BE_DECODED` for that reachable
+corruption.
+
+The three identical malformed-instruction exits were consolidated into one
+response path instead of accepting the mutant. A second fresh, full,
+history-free rebase generated 387 mutants and killed that shared return; its
+only `NO_COVERAGE` result is the already documented settler defensive
+re-parse. Rebase is intentionally additive and pruning was excluded from this
+adoption, so the now-stale transition row remains under this label. It is
+history, not authority for a future same-key mutant: any later line-drift or
+multiplicity advisory for this key requires a fresh semantic review.
 
 `verify` 93 holds two sibling `ORDER_IF` mutants — one row per sibling since
 the 2026-07-24 multiset upgrade. Both twins carry the same label
