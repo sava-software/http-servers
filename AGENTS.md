@@ -68,7 +68,12 @@ the `hardening {}` block in each module's `build.gradle.kts`.
   fresh full history-free previews must have the exact same candidate multiset;
   its own third fresh write-boundary run must match them too. Candidate drift is a
   reviewer-stop, and matching bytes do not replace review of the relevant
-  solo/gate load context or each removal criterion. Never hand-edit
+  solo/gate load context or each removal criterion. Every retained row remains
+  active acceptance authority regardless of a `# retired`, `# refactor`, or other
+  note. When a reviewed refactor removes the mutation site and the gate is already
+  clear, finish the normal Prune protocol rather than leaving a purported
+  non-authorizing history row; this is tightening the ratchet, not excusing fresh
+  debt. Never hand-edit
   record structure or provenance stamps. A PIT, PIT-plugin/tool-artifact,
   ArcMutate-base, or certificate change uses `pitest<Suite>BaselineRebase`: it
   preserves every old row, seeds new rows `# untriaged`, and stamps the reviewed
@@ -277,7 +282,7 @@ the `hardening {}` block in each module's `build.gradle.kts`.
   waiting. Give test clocks a non-zero origin — a clock starting at 0 makes
   every "start timestamp mutated to 0" mutant equivalent by accident.
 <!-- hardening-template block:end -->
-<!-- hardening-template sha256:4700f2aad913 -->
+<!-- hardening-template sha256:714041431f01 -->
 
 CI owns `check`; the local release checklist owns `hardeningCertifyAll` and
 the explicit `fuzzAll` campaign. Complete certification means six project
