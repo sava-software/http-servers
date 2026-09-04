@@ -1,5 +1,13 @@
 # Changelog
 
+## [25.4.0](https://github.com/sava-software/http-servers/compare/25.3.0...25.4.0) (2026-09-04)
+
+
+### Bug Fixes
+
+* **core:** stop pulling jdk.httpserver into the module graph ([716db01](https://github.com/sava-software/http-servers/commit/716db01f5c204d5d49ed5dd33949824d8c00c9a4))
+* **deps:** update solanaBOMVersion to 25.30.8 ([46eb890](https://github.com/sava-software/http-servers/commit/46eb890707d8f9445609ca8628c504a64cb837f1))
+
 ## [25.3.0](https://github.com/sava-software/http-servers/compare/25.2.0...25.3.0) (2026-08-07)
 
 
