@@ -3,10 +3,10 @@
 Java 25 multi-module library providing a small HTTP server abstraction (`http-servers-core`)
 with pluggable backends (`http-servers-jdk`, `http-servers-jetty`, `http-servers-fusionauth`,
 `http-servers-helidon`, `http-servers-netty`),
-a demo module (`http-servers-hello`), and an x402 payment gate for the Solana `exact` scheme
-(`http-servers-sava`). Built with the shared `software.sava.build` Gradle plugin (same plugin
-family as the `sava` repo); the `hardening` convention plugin provides PIT mutation testing and
-Jazzer fuzzing.
+a demo module (`http-servers-hello`), an x402 payment gate for the Solana `exact` scheme
+(`http-servers-sava`), and an unpublished soak harness (`http-servers-soak`). Built with the
+shared `software.sava.build` Gradle plugin (same plugin family as the `sava` repo); the
+`hardening` convention plugin provides PIT mutation testing and Jazzer fuzzing.
 
 ## Testing
 
@@ -291,6 +291,14 @@ receipts covering fourteen suites with no `.running` sentinel. The fuzz campaign
 must record both its time budget and parallel-target limit and exercise all five
 registered targets: `formatPlaceholders`, `pathCanonicalizer`, `handlerUtil`,
 `svmVerify`, and `x402Payload`.
+
+`http-servers-soak` sits outside these gates. It is an operational tool — a long-running target
+server and a load generator, run through `./http-servers-soak/soak.sh` (see the README's "Soak
+testing") — with no unit oracle to mutate against, for the same reason a load generator is never
+a PIT target. It applies no `hardening` plugin, registers no suite, is not published, and is not
+one of the eight receipts above. A run's `summary.md` is an operational record, not a
+certification input; a defect it exposes is fixed and pinned in the owning backend's dispatch
+suite, never in the harness.
 
 The `hardening-template` marker above is checked by `agentsTemplateInSync` (wired into
 `check`): when sava-build's agent-instructions template changes, the build fails until this
