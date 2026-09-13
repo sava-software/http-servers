@@ -34,11 +34,42 @@ normalised ticker — the gate's clock, so the two agree in differences and disa
 absolute readings, which is what makes a deadline computed from an absolute reading, or
 an accept time mutated to zero, observable).
 
+After the client-reset fix (2026-09-13, the soak harness's finding under "Killed by
+pinning": a client abandoning an upload with `RST` rather than `FIN` reached
+`NettyController.exceptionCaught` as a bare `Connection reset` `SocketException`, was logged
+`SEVERE` with a stack trace and answered 500 on a dead socket, where the orderly close of the
+same abandonment was already `DEBUG` with nothing written) the population is **191 mutants,
+191 killed, 0 `SURVIVED`, 0 `TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed
+history-free on the final code (`pitestDispatch -PnoMutationHistory`, PIT's mutation phase 8 s
+of a 9 s run, 994 test executions, 5.2 per mutant) under 1-minute load averages of 13.1 at
+launch and 21.7 when it finished, `pitestDispatchVerify` 191/191, `mutationOwnershipAudit` 13
+classes owned. Line coverage of the mutated classes is 290/292, the two uncovered lines still
+`ResponseUtil`'s private constructor. A second history-free observation on the same code read
+the identical 191/191 population and verdicts (mutation phase 9 s of an 11 s run, 992
+executions, 5.19 per mutant, the same 290/292) under load averages of 19.5 at launch and 19.6
+at the finish. A third, after the review of that fix reworded the client-abort branch's `DEBUG`
+message (it fires for any peer-gone read, not only mid-body) and added the NIO-only notes,
+read the same 191/191 history-free (954 executions, 4.99 per mutant, the same 290/292,
+`pitestDispatchVerify` 191/191) under load averages of 35.1 at launch and 47.0 at the finish.
+Over the 180-mutant population that is +11, all of them
+in the extracted `NettyController.clientLeft`: the `PrematureChannelClosureException` guard (2
+`RemoveConditional` plus the `true` it returns), the `IOException` guard (2), the
+message rule (2 `RemoveConditional` siblings each way over `message != null &&
+message.contains(..)`, plus its `BooleanTrueReturnVals`) and the closing `false` (1).
+`exceptionCaught` itself is unchanged at 4 — the classification it used to make inline moved
+into the new method, taking its two mutants with it. Every one is killed by a named test
+below. The fix's own first observation, before the negative case was widened past
+`IOException`, read 191 mutants and 190 killed with one `SURVIVED` — `clientLeft`'s
+`RemoveConditionalMutator_EQUAL_IF` on the `IOException` guard, whose removal only matters for
+a throwable that is not an `IOException` and whose message says "Connection reset" anyway
+(mutation phase 9 s of a 10 s run, 972 executions, 5.09 per mutant) under load averages of
+31.3 at launch and 23.9 at the finish.
+
 After the expectation-refusal fix (2026-09-13, after the idle-timeout review: the
 delayed-reset defect under "Killed by pinning", its reproductions and the tests that pin
 the refusal contract) and the review of that fix the same day (the framing of a head the
 codec could not parse, below, and the tests that pin the malformed-head and
-unparsable-line shapes and the refusal over sockets) the population is **180 mutants, 180
+unparsable-line shapes and the refusal over sockets) the population was **180 mutants, 180
 killed, 0 `SURVIVED`, 0 `TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed
 history-free on the final code (`pitestDispatch -PnoMutationHistory`, PIT's mutation phase
 8 s of a 9 s run, 906 test executions, 5.03 per mutant) under a 1-minute load average of
@@ -432,12 +463,64 @@ previews with the identical single-row candidate multiset, then
   400, the `exceptionCaught` 500 and both 413s): `malformedRequestsAreRefusedAndClosed`,
   `errorEscapingANonBlockingHandlerIsAnsweredAndLogged` and the 413 cases above all
   read to EOF.
-- `NettyController.exceptionCaught`'s client-abort branch (a
-  `PrematureChannelClosureException` is the peer leaving mid-request, logged at
-  `DEBUG` with nothing written): both directions by
-  `aClientLeavingMidRequestIsNotAServerFailure` (no `SEVERE`, one `FINE` carrying the
-  throwable, an empty wire) against `errorEscapingANonBlockingHandlerIsAnsweredAndLogged`
-  (a real `Error` still answered 500 and logged at `ERROR`).
+- `NettyController.exceptionCaught`'s client-abort branch, and the client reset it used to
+  miss (2026-09-13, the soak harness's finding). Oracle: the README's own promise for this
+  backend — a connection that ends while a request body is still arriving is a client
+  abandoning an upload, not a server failure — and RFC 9110 §15.6.1, which reserves `5xx` for
+  the server being aware *it* is in error. The defect: only Netty's aggregator's
+  `PrematureChannelClosureException` was classified, which is the orderly close (`FIN`). A
+  client that abandons the same upload with a reset (`SO_LINGER 0`, so the abort is `RST`)
+  fails the transport's own read instead — `java.net.SocketException: Connection reset` out of
+  `NioSocketChannel.doReadBytes`, with no Netty type of its own — and fell through to the
+  `ERROR` branch: a `SEVERE` record with a stack trace per abandoned upload (354 of 354 cases
+  in the harness's run) and a 500 written to a socket that is already gone. The two are the
+  same event over the same contract, so the classification is now one predicate,
+  `clientLeft`, matching the aggregator's exception *or* an `IOException` whose message names
+  a reset — the message is all either platform gives: the NIO transport raises the
+  `SocketException` above, the native transports an `IOException` carrying the C-level
+  `Connection reset by peer` behind the failing syscall's name (this server bootstraps
+  `NioServerSocketChannel` only, so the native shape is guarded ahead of a transport switch,
+  not observed in this module). Narrow on purpose: a
+  handler's `RuntimeException` never reaches here (`invoke` answers it) and an `Error` is not
+  an `IOException`, so neither can be downgraded, and the branch now closes the connection as
+  well as writing nothing. Pinned in process by `aConnectionResetIsNotAServerFailure` (the
+  reproduction — the `SocketException` shape fired through the real pipeline behind a head and
+  a body prefix: no `SEVERE`, one `FINE` carrying that throwable, an empty wire, the channel
+  closed — which failed against the old classification on the 500 it wrote to the dead
+  channel, the assertion that comes first), by
+  `aClientLeavingMidRequestIsNotAServerFailure` (the `FIN` sibling, unchanged) and, in the
+  other direction, by `aFailureThatIsNotAClientLeavingIsStillAnswered`: an `IOException`
+  naming another transport fault, one with no message at all, and an `AssertionError` that
+  *says* "Connection reset" — all three still 500, `Connection: close` and `ERROR`, which is
+  what stops the rule widening into a silently unanswered client. That last case is what
+  kills `clientLeft`'s `IOException` guard (`RemoveConditionalMutator_EQUAL_IF`): the guard is
+  only observable when the type and the message disagree. The two `IOException` fixtures kill
+  nothing on their own; they pin the direction the contract takes for a read failure the rule
+  does not recognise, which is a decision rather than a mutant: without the reset phrase there
+  is nothing to tell a peer that vanished from a transport that failed underneath a live one,
+  and the two mistakes are not symmetric — answering a socket that is in fact gone costs one
+  `ERROR` record and a write that fails harmlessly, swallowing a failure on a live one costs a
+  client never answered — so the default stays "answer", and only the shape the harness
+  observed (354 of 354 abandoned uploads as the reset) is downgraded. Widening it to other
+  peer-gone messages, or to a channel-liveness check, is a change to that decision and to the
+  soak harness's expected-`SEVERE` ceiling, which counts resets only. Over sockets the reset is pinned end
+  to end by `aClientResettingAnUploadIsNotAServerFailure` — head, a prefix of the declared
+  body, `SO_LINGER 0`, close; the controller's record awaited as the event it is (the reset is
+  seen on an event-loop thread), then no `SEVERE` among the captured records and a request on
+  a fresh connection still answered 200; it is the case that reproduced the harness's exact
+  finding, failing against the old classification on that `SEVERE Failed to process request.
+  java.net.SocketException: Connection reset` — against
+  `errorEscapingANonBlockingHandlerIsAnsweredAndLogged` (a real `Error` still answered 500 and
+  logged at `ERROR`).
+- One statement of that rule generates no mutant and is pinned by test anyway:
+  `clientLeft` matches the reset phrase with `contains`, and no enabled mutator expresses
+  `equals`/`startsWith` in its place. `aNativeConnectionResetIsNotAServerFailure` fires the
+  native transports' shape — a plain `java.io.IOException` whose message is
+  `recvAddress(..) failed: Connection reset by peer`, where the phrase is inside the message
+  rather than the whole of it; a shape this NIO-only server cannot produce today, guarded
+  ahead of a transport switch — and asserts the same `DEBUG`, empty wire and close. Verified
+  by narrowing the call to `equals` in place and re-running `NettyPipelineTest` (that case
+  fails, the `SocketException` case still passes; the file restored afterwards).
 - `Expect: 100-continue` before the body (RFC 9110 §10.1.1): `expectContinueIsAnsweredBeforeTheBodyIsSent`
   sends nothing past the head until the `100` has arrived; in process,
   `anInterimResponseCompletesNothing` and `aContinueExpectationAtTheLimitIsInvited`.
@@ -484,9 +567,10 @@ before the first `hardeningCertify`.
 
 Since the idle timeout the suite's slowest covering test is
 `anIdleConnectionIsClosedAfterTheIdleTimeout` — 206 ms in all three 2026-09-13 history-free
-runs, against the plugin's 250 ms threshold, and real wall-clock time by construction (a
-200 ms knob waited out for an EOF), not work. No coverage-phase advisory fired in
-either run, but that case is the first thing to look at if this suite ever shows a
+runs before the client-reset fix and 206/215 ms in its two, against the plugin's 250 ms
+threshold, and real wall-clock time by construction (a
+200 ms knob waited out for an EOF), not work. No coverage-phase advisory has fired in
+any of them, but that case is the first thing to look at if this suite ever shows a
 load-dependent `TIMED_OUT`. History: before it, the advisory named
 `absentHostBindsAllInterfaces` at 246–251 ms (two servers — a `null` host and a blank
 one — and two `HttpClient`s), which remains the second candidate.
@@ -512,7 +596,8 @@ inside `EmbeddedEventLoop.runScheduledTasks`, which no fixture bound reaches; th
 one-nanosecond floor in `NettyRequestGate.scheduleIdleCheck` ("Refactored out", above)
 makes the boundary mutant fail by assertion instead. Both history-free runs on the
 idle-timeout code (142 mutants before the review, 144 after it), the
-expectation-refusal run (178) and its review-application run (180) read zero `TIMED_OUT`. Any future `TIMED_OUT` in this suite is, by
+expectation-refusal run (178), its review-application run (180) and both client-reset runs
+(191) read zero `TIMED_OUT`. Any future `TIMED_OUT` in this suite is, by
 construction, a covering test that exceeded its bound *and* PIT's margin, a head-only
 response an `HttpClient` case was left to wait on, or a scheduled task re-armed for
 the instant it runs in: a `SURVIVED`↔`TIMED_OUT` flip of a row that should already be

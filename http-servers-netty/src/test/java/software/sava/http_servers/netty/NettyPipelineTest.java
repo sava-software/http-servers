@@ -483,6 +483,76 @@ final class NettyPipelineTest {
         "the abort is still traceable at DEBUG: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
   }
 
+  /// The other way a client abandons an upload: a reset rather than an orderly close. There
+  /// is no Netty exception type for it — the transport's own read fails — so the pipeline
+  /// carries `java.net.SocketException: Connection reset` (what the NIO transport raises, and
+  /// what the soak harness observed against this server) up to `exceptionCaught`. It is the
+  /// same peer leaving as the case above: `DEBUG`, an empty wire, and the connection closed.
+  @Test
+  void aConnectionResetIsNotAServerFailure() {
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    final var reset = new java.net.SocketException("Connection reset");
+    final var logs = controllerLogs(() -> channel.pipeline().fireExceptionCaught(reset));
+    assertEquals(List.of(), routes.ran, "no handler ever saw the request");
+    assertTrue(wire(channel).isEmpty(), "there is no one to answer");
+    assertFalse(channel.isOpen(), "a reset connection is closed, not left open");
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+        "a reset is not an error: " + logs.stream().map(LogRecord::getMessage).toList());
+    assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(Level.FINE) && r.getThrown() == reset),
+        "the abort is still traceable at DEBUG: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+  }
+
+  /// The same reset as the case above, as the native transports surface it: not a
+  /// `SocketException` at all but a plain `IOException` whose message carries the C-level
+  /// `Connection reset by peer` behind the name of the syscall that failed. The phrase is
+  /// inside the message, not the whole of it. This server bootstraps `NioServerSocketChannel`
+  /// only, so the shape cannot occur in this module today: the case guards the rule against
+  /// a narrowing to `equals` ahead of a transport switch, rather than pinning a path observed.
+  @Test
+  void aNativeConnectionResetIsNotAServerFailure() {
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    final var reset = new java.io.IOException("recvAddress(..) failed: Connection reset by peer");
+    final var logs = controllerLogs(() -> channel.pipeline().fireExceptionCaught(reset));
+    assertEquals(List.of(), routes.ran);
+    assertTrue(wire(channel).isEmpty(), "there is no one to answer");
+    assertFalse(channel.isOpen(), "a reset connection is closed, not left open");
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+        "a reset is not an error: " + logs.stream().map(LogRecord::getMessage).toList());
+    assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(Level.FINE) && r.getThrown() == reset),
+        "the abort is still traceable at DEBUG: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+  }
+
+  /// The other direction of the same rule, over the three ways a failure can come close to
+  /// the client-abort shape without being one: an `IOException` that names another transport
+  /// fault, an `IOException` with no message at all, and a throwable that says the words but
+  /// is not an `IOException` — a handler's own `Error` carrying text this server never wrote.
+  /// Only the transport can report a peer leaving, so all three keep the unchanged contract —
+  /// `500`, `Connection: close`, an `ERROR` record — and the classification cannot be widened
+  /// into swallowing a genuine failure of this server, which would leave the client unanswered.
+  @Test
+  void aFailureThatIsNotAClientLeavingIsStillAnswered() {
+    final List<Throwable> causes = List.of(
+        new java.io.IOException("Broken pipe"),
+        new java.io.IOException(),
+        new AssertionError("Connection reset"));
+    for (final var cause : causes) {
+      final var routes = new Routes().nonBlockingPost("/p", ECHO);
+      final var channel = pipeline(routes, Runnable::run);
+      channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+      final var logs = controllerLogs(() -> channel.pipeline().fireExceptionCaught(cause));
+      final var wire = wire(channel);
+      assertTrue(wire.startsWith("http/1.1 500 internal server error"), cause + " must still be answered: " + wire);
+      assertTrue(wire.contains("connection: close"), cause + " must end the connection: " + wire);
+      assertFalse(channel.isOpen(), cause + " must close the connection");
+      assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(Level.SEVERE) && r.getThrown() == cause),
+          cause + " must be logged as a failure: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+    }
+  }
+
   // ---- expectation refusals: decided where the codec stands, answered in turn ----
 
   /// Control for the cases below: three pipelined requests, the third's body split across two

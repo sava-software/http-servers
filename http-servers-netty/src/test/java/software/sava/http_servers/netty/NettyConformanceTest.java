@@ -121,12 +121,25 @@ final class NettyConformanceTest {
   /// Captures JUL records published under {@code loggerName} while {@code body} runs.
   private static java.util.List<java.util.logging.LogRecord> recordLogs(
       final String loggerName, final org.junit.jupiter.api.function.Executable body) throws Throwable {
+    return recordLogs(loggerName, null, new java.util.concurrent.CountDownLatch(0), body);
+  }
+
+  /// As above, but forcing {@code level} on the logger for the duration — the controller
+  /// reports a peer that left at `DEBUG`, which the default `INFO` threshold drops before any
+  /// handler sees it — and counting {@code published} down on every record, so a test can wait
+  /// for a record emitted on an event-loop thread rather than on its own.
+  private static java.util.List<java.util.logging.LogRecord> recordLogs(
+      final String loggerName,
+      final java.util.logging.Level level,
+      final java.util.concurrent.CountDownLatch published,
+      final org.junit.jupiter.api.function.Executable body) throws Throwable {
     final var records = java.util.Collections.synchronizedList(new java.util.ArrayList<java.util.logging.LogRecord>());
     final var jul = java.util.logging.Logger.getLogger(loggerName);
     final var handler = new java.util.logging.Handler() {
       @Override
       public void publish(final java.util.logging.LogRecord record) {
         records.add(record);
+        published.countDown();
       }
 
       @Override
@@ -137,11 +150,18 @@ final class NettyConformanceTest {
       public void close() {
       }
     };
+    final var restore = jul.getLevel();
+    if (level != null) {
+      jul.setLevel(level);
+    }
     jul.addHandler(handler);
     try {
       body.execute();
     } finally {
       jul.removeHandler(handler);
+      if (level != null) {
+        jul.setLevel(restore);
+      }
     }
     return records;
   }
@@ -1463,6 +1483,51 @@ final class NettyConformanceTest {
       assertEquals(200, rawStatus(response), response);
       assertEquals("hi", rawBody(response), response);
       assertClosed(in);
+    }
+  }
+
+  /// A client that abandons an upload with a reset — head, a prefix of the body it declared,
+  /// then a close with `SO_LINGER 0`, which sends `RST` instead of `FIN` — is the peer
+  /// leaving, exactly as the orderly close of `aClientLeavingMidRequestIsNotAServerFailure`
+  /// is. The transport has no Netty exception type for it: the read fails as a
+  /// `Connection reset` `IOException`, which reaches `exceptionCaught` and must be reported
+  /// at `DEBUG` with nothing written, never as this server failing. Waits for the record
+  /// itself (the reset is observed on an event-loop thread), then shows the server is
+  /// unharmed by serving a request on a fresh connection.
+  @Test
+  void aClientResettingAnUploadIsNotAServerFailure() throws Throwable {
+    final int port = serve(builder -> {
+      builder.nonBlockingQueryPost("/upload", request -> HttpResponse.response("text/plain", "up"));
+      builder.blockingQueryHandler("/after", request -> HttpResponse.response("text/plain", "after"));
+    });
+
+    final var reported = new java.util.concurrent.CountDownLatch(1);
+    final var logs = recordLogs(NettyController.class.getName(), java.util.logging.Level.ALL, reported, () -> {
+      try (final var socket = new java.net.Socket("127.0.0.1", port)) {
+        socket.setSoTimeout(2_000);
+        // discard whatever is unsent and answer the server's next read with RST
+        socket.setSoLinger(true, 0);
+        final var out = socket.getOutputStream();
+        out.write("POST /upload HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 64\r\n\r\nabcd"
+            .getBytes(StandardCharsets.US_ASCII));
+        out.flush();
+      }
+      assertTrue(reported.await(2, java.util.concurrent.TimeUnit.SECONDS),
+          "the controller must report the abandoned upload");
+    });
+
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.SEVERE.intValue()),
+        "an abandoned upload is not a server failure: "
+            + logs.stream().map(r -> r.getLevel() + " " + r.getMessage() + " " + r.getThrown()).toList());
+    assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(java.util.logging.Level.FINE)
+            && r.getThrown() instanceof java.io.IOException),
+        "the abort is still traceable at DEBUG: "
+            + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var after = get(client, port, "/after");
+      assertEquals(200, after.statusCode(), "the reset must not disturb the server");
+      assertEquals("after", after.body());
     }
   }
 

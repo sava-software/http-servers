@@ -415,7 +415,7 @@ later).
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
   `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
-  `ServerBootstrap` chain all return their receiver. 180 mutants, **100% killed**, no accepted
+  `ServerBootstrap` chain all return their receiver. 191 mutants, **100% killed**, no accepted
   baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
   tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
   `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so

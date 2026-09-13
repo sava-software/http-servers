@@ -10,6 +10,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import software.sava.http_servers.core.handlers.HandlerMap;
 
+import java.io.IOException;
 import java.util.concurrent.Executor;
 
 import static java.lang.System.Logger.Level.DEBUG;
@@ -47,10 +48,11 @@ import static java.lang.System.Logger.Level.ERROR;
 ///   `Error` on the inline path reaches [#exceptionCaught] through the pipeline — Netty
 ///   routes a throw from `channelRead` to the throwing handler's `exceptionCaught` whether the
 ///   read was fired by the socket or by the gate's drain — which answers 500 and closes.
-/// - A connection that closes while a request body is still arriving — the client aborted
-///   an upload — is reported by Netty's aggregator as a `PrematureChannelClosureException`.
-///   That is the peer going away, not a failure of this server: it is logged at `DEBUG` and
-///   nothing is written.
+/// - A connection that ends while a request body is still arriving — the client abandoned
+///   an upload — reaches [#exceptionCaught] two ways: an orderly close (`FIN`) as Netty's
+///   aggregator's `PrematureChannelClosureException`, a reset (`RST`) as the transport's own
+///   `Connection reset` [IOException]. Either is the peer going away, not a failure of this
+///   server: both are logged at `DEBUG`, nothing is written, and the connection is closed.
 /// - An HTTP/1.1 request without a `Host` header (or with a blank one) is answered, not
 ///   refused with the 400 RFC 9112 §3.2 asks for — parity with the JDK backend; Jetty,
 ///   FusionAuth and Helidon refuse it.
@@ -174,12 +176,39 @@ final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest>
     ctx.writeAndFlush(response);
   }
 
+  /// A peer that abandoned the request it was still sending, in either of the two ways it
+  /// can: an orderly close (`FIN`), which Netty's aggregator reports as a
+  /// [PrematureChannelClosureException], and a reset (`RST`), which has no exception type of
+  /// its own — the transport's own read fails, as `java.net.SocketException: Connection reset`
+  /// on the NIO transport and as an [IOException] naming the failing syscall and the C-level
+  /// `Connection reset by peer` on the native ones. The message is all either platform
+  /// offers, so it is what this matches, and only on an [IOException]: a handler's
+  /// `RuntimeException` is answered by [#invoke] and never arrives here, and an `Error` is
+  /// not an [IOException], so neither can be mistaken for a client leaving. This server
+  /// builds the NIO transport only ([NettyHttpServer] bootstraps `NioServerSocketChannel`),
+  /// so the native shape is guarded against a future transport switch, not observed here.
+  /// The reset is also the only peer-gone shape this matches by design: a read failure the
+  /// rule does not recognise is still answered, because the cost of answering a socket that
+  /// is in fact gone is one `ERROR` record and a write that fails harmlessly, while the cost
+  /// of swallowing a failure on a live one is a client never answered.
+  private static boolean clientLeft(final Throwable cause) {
+    if (cause instanceof PrematureChannelClosureException) {
+      return true;
+    }
+    if (cause instanceof IOException) {
+      final var message = cause.getMessage();
+      return message != null && message.contains("Connection reset");
+    }
+    return false;
+  }
+
   @Override
   public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
-    if (cause instanceof PrematureChannelClosureException) {
-      // the connection is already closed and no handler ran: there is nothing to answer and
-      // nothing of ours failed
-      logger.log(DEBUG, "Connection closed while a request was still being received.", cause);
+    if (clientLeft(cause)) {
+      // no handler ran and there is no one left to answer: writing a 500 to a connection the
+      // peer has already dropped would only fail, and nothing of ours failed
+      logger.log(DEBUG, "Connection closed by the peer.", cause);
+      ctx.close();
       return;
     }
     // the failing request is unknown here — an Error past invoke's guard, or the transport —

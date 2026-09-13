@@ -200,8 +200,9 @@ proxy if you need a different limit; the other backends stream the body with no 
 connection are cut at once, in-flight blocking handlers included. It then waits for the event-loop
 threads to exit, so a non-blocking handler that blocks the loop against its contract delays the
 return by its own duration. The other backends do not wait on handler code in `stop()`. A
-connection that closes while a request body is still arriving — a client abandoning an upload —
-is not a server failure on Netty: it is logged at `DEBUG`, nothing is answered.
+connection that ends while a request body is still arriving — a client abandoning an upload,
+whether it closes the connection or resets it — is not a server failure on Netty: it is logged
+at `DEBUG`, nothing is answered and the connection is closed.
 
 **Idle connections on Netty.** Netty closes an idle connection after 30 s without writing
 anything, where idle means neither carrying a fully received request that awaits its response nor
