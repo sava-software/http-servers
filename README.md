@@ -197,9 +197,20 @@ connection that closes while a request body is still arriving — a client aband
 a refused request that asked to close — is not a server failure on Netty: it is logged at `DEBUG`,
 nothing is answered.
 
-**Idle connections on Netty.** Netty holds an open but silent connection until the client closes
-it, where the JDK and Jetty backends close an idle connection after about 30 s. Sit the Netty
-backend behind a proxy that bounds idle connections if that matters.
+**Idle connections on Netty.** Netty closes an idle connection after 30 s without writing
+anything, where idle means neither carrying a fully received request that awaits its response nor
+making progress: a silent connection between requests is closed 30 s after its last response (or
+its accept), and a request whose head has arrived but whose body has stopped is closed 30 s after
+the last byte decoded — so a client that sends a head and then nothing cannot hold a connection
+open for free, while an upload that is slow but still progressing is never cut. A fully received
+request, however long its handler takes, keeps its connection, and a client gets the full 30 s of
+grace after every response. The JDK and Jetty backends both close a silent connection between
+requests after the same 30 s; they part on a request in progress. The JDK never times one out —
+its request timeout defaults to unlimited, so a stalled body holds a connection for good. Jetty
+delivers its idle timeout to whatever the request is waiting on: a handler waiting for a body that
+has stopped gets a `500` and the connection is closed, while a handler that is busy rather than
+waiting is left to finish and its response is still delivered. Netty's rule is Jetty's on both
+counts and diverges from the JDK only in closing the stalled body.
 
 **Absolute-form targets.** A request line in absolute form, `GET http://host/p HTTP/1.1`, is
 refused with `400` by Netty and FusionAuth, which route on the target as received. The JDK and

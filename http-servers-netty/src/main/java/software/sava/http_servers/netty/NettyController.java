@@ -58,10 +58,17 @@ import static java.lang.System.Logger.Level.ERROR;
 /// - An absolute-form request target (`GET http://host/p HTTP/1.1`) is refused with the
 ///   ambiguous-path 400 by the shared routing, as on FusionAuth; the JDK and Jetty servers
 ///   reduce it to its path first (see [NettyRequest]).
-/// - There is no idle-connection timeout: an open connection that goes silent is held until
-///   the client closes it, where the JDK and Jetty backends close an idle connection after
-///   ~30 s. A consumer swapping to this backend inherits an unbounded connection lifetime and
-///   should sit it behind a proxy that bounds idle connections (see the README divergence).
+/// - A request whose head has arrived but whose body has stopped is closed by the idle
+///   timeout 30 s after the last byte decoded, with nothing written — as Jetty does, failing
+///   a handler that is waiting for that body with a `500` and closing; the JDK backend, whose
+///   request timeout defaults to unlimited, holds such a connection for good.
+///
+/// An idle connection — one that is neither carrying a fully received request awaiting its
+/// response nor making progress for 30 s, measured from the later of its last decoded read
+/// and its last completed response — is closed by the [NettyRequestGate], as the JDK
+/// backend's idle interval and Jetty's connector idle timeout close a silent connection
+/// between requests. A fully received request is never idle, so a blocking route that takes
+/// minutes keeps its connection; neither of those backends interrupts a busy handler either.
 final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest> {
 
   private static final System.Logger logger = System.getLogger(NettyController.class.getName());

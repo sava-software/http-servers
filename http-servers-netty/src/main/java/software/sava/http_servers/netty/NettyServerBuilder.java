@@ -7,13 +7,15 @@ import software.sava.http_servers.core.server.BaseHttpServerBuilder;
 import software.sava.http_servers.core.server.HttpServer;
 
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.concurrent.Executor;
 
 import static java.lang.System.Logger.Level.ERROR;
+import static java.util.Objects.requireNonNull;
 
 /// Builds a server over Netty 4.2 (NIO transport, HTTP/1.x codec). The package is not
 /// exported, so consumers reach this builder only through `HttpServerBuilderFactory` and
-/// the three tuning knobs below are fixed at their defaults for them — like the JDK and
+/// the four tuning knobs below are fixed at their defaults for them — like the JDK and
 /// FusionAuth backends, which expose no knobs either; the wider constructor exists for this
 /// package's own tests.
 final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, NettyHttpServer> {
@@ -23,17 +25,33 @@ final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, Netty
   static final int DEFAULT_MAX_CONTENT_LENGTH = 64 << 20;
   /// Zero leaves the I/O worker count to Netty (twice the available processors).
   static final int DEFAULT_IO_THREADS = 0;
+  /// A connection that is neither carrying a fully received request awaiting its response nor
+  /// making progress for this long — measured from the later of its last decoded read and its
+  /// last completed response, so a stalled request body is idle and a request awaiting its
+  /// handler never is — is closed: 30 s, the JDK backend's idle interval and Jetty's connector
+  /// default. No mutant reaches a static initializer, so the value is pinned by
+  /// `NettyConformanceTest.theDefaultIdleTimeoutMatchesTheOtherBackends`.
+  static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofSeconds(30);
 
   private final int maxContentLength;
   private final int ioThreads;
+  private final long idleTimeoutNanos;
 
-  NettyServerBuilder(final int maxContentLength, final int ioThreads) {
+  /// `idleTimeout` must be positive and expressible in nanoseconds (about 292 years): there is
+  /// no "disabled" value, a zero or negative timeout would close every connection the instant
+  /// it was accepted, and an absent or out-of-range one would otherwise fail only inside
+  /// `createServer` — all are refused here, at construction.
+  NettyServerBuilder(final int maxContentLength, final int ioThreads, final Duration idleTimeout) {
+    if (!requireNonNull(idleTimeout, "idleTimeout").isPositive()) {
+      throw new IllegalArgumentException("idleTimeout must be positive: " + idleTimeout);
+    }
     this.maxContentLength = maxContentLength;
     this.ioThreads = ioThreads;
+    this.idleTimeoutNanos = idleTimeout.toNanos();
   }
 
   NettyServerBuilder() {
-    this(DEFAULT_MAX_CONTENT_LENGTH, DEFAULT_IO_THREADS);
+    this(DEFAULT_MAX_CONTENT_LENGTH, DEFAULT_IO_THREADS, DEFAULT_IDLE_TIMEOUT);
   }
 
   @Override
@@ -56,7 +74,7 @@ final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, Netty
 
   @Override
   protected void setController(final NettyHttpServer server, final HandlerMap<NettyHandler> handlerMap) {
-    server.childHandler(new NettyChannelInitializer(handlerMap, server.executor(), maxContentLength));
+    server.childHandler(new NettyChannelInitializer(handlerMap, server.executor(), maxContentLength, idleTimeoutNanos, System::nanoTime));
   }
 
   @Override

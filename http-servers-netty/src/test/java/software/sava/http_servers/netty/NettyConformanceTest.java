@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Pins the parts of the core Request/HttpResponse contract that every backend must agree
@@ -49,6 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// test as a timeout exception: an assertion-level kill, deterministic under load. Raw
 /// tests additionally assert on a Content-Length delimited response before they wait for
 /// the close, so a wrong status is caught by its assertion rather than by the bound.
+/// `anIdleConnectionIsClosedAfterTheIdleTimeout` is the one case that waits on real time,
+/// for an event and never a sleep; the idle timeout's arithmetic, and which connections it
+/// applies to, are pinned on an advanced clock in `NettyPipelineTest`.
 final class NettyConformanceTest {
 
   /// Every server a test starts without owning its lifecycle, drained here so no bound
@@ -847,6 +851,35 @@ final class NettyConformanceTest {
     }
   }
 
+  /// The shipped idle timeout is the number the README and the other backends' defaults name:
+  /// 30 s, the JDK backend's `idleInterval` and Jetty's connector default. Every in-process
+  /// idle property is measured against this constant, so the constant itself is pinned here —
+  /// PIT generates no mutant for a static initializer, and a test is the only pin there is.
+  @Test
+  void theDefaultIdleTimeoutMatchesTheOtherBackends() {
+    assertEquals(Duration.ofSeconds(30), NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
+  }
+
+  /// The idle timeout knob is checked where it is set. A zero or negative timeout would close
+  /// every connection the instant it was accepted, and an absent timeout or one too large for
+  /// nanoseconds would otherwise fail only inside `createServer`; all of them are refused by
+  /// the constructor, and a positive one is accepted.
+  @Test
+  void anUnusableIdleTimeoutIsRefusedAtConstruction() {
+    for (final var timeout : new Duration[]{Duration.ZERO, Duration.ofNanos(-1), Duration.ofSeconds(-30)}) {
+      assertThrows(IllegalArgumentException.class,
+          () -> new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, NettyServerBuilder.DEFAULT_IO_THREADS, timeout),
+          "a non-positive idle timeout must be refused: " + timeout);
+    }
+    assertThrows(NullPointerException.class,
+        () -> new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, NettyServerBuilder.DEFAULT_IO_THREADS, null));
+    assertThrows(ArithmeticException.class,
+        () -> new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, NettyServerBuilder.DEFAULT_IO_THREADS, Duration.ofDays(400_000)),
+        "a timeout past the nanosecond range must fail at construction, not at createServer");
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, NettyServerBuilder.DEFAULT_IO_THREADS, Duration.ofNanos(1)));
+  }
+
   /// `HttpServer` documents `stop()` as a no-op on a server that never started; here that
   /// means no event loops exist to shut down, and a second stop finds none either.
   @Test
@@ -878,7 +911,7 @@ final class NettyConformanceTest {
   @Test
   void pipelinedResponsesArriveInRequestOrder() throws Exception {
     final var release = new java.util.concurrent.CountDownLatch(1);
-    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1);
+    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
     builder.blockingQueryHandler("/first", request -> {
       await(release);
       return HttpResponse.response("text/plain", "first");
@@ -1006,7 +1039,7 @@ final class NettyConformanceTest {
   /// a bound the other backends do not have, documented on `NettyController`.
   @Test
   void oversizedBodiesAreRefusedWith413() throws Exception {
-    final var builder = new NettyServerBuilder(256, NettyServerBuilder.DEFAULT_IO_THREADS);
+    final var builder = new NettyServerBuilder(256, NettyServerBuilder.DEFAULT_IO_THREADS, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
     builder.blockingQueryPost("/big", request ->
         HttpResponse.response("application/octet-stream", request.body()));
     final int port = start(builder);
@@ -1103,7 +1136,7 @@ final class NettyConformanceTest {
   @Test
   void errorEscapingAQueuedHandlerIsAnsweredAndLogged() throws Throwable {
     final var release = new java.util.concurrent.CountDownLatch(1);
-    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1);
+    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
     builder.blockingQueryHandler("/first", request -> {
       await(release);
       return HttpResponse.response("text/plain", "first");
@@ -1207,7 +1240,7 @@ final class NettyConformanceTest {
   @Test
   void pipelinedExpectationFailureKeepsRequestOrder() throws Exception {
     final var release = new java.util.concurrent.CountDownLatch(1);
-    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1);
+    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
     builder.blockingQueryHandler("/slow", request -> {
       await(release);
       return HttpResponse.response("text/plain", "slow");
@@ -1248,7 +1281,7 @@ final class NettyConformanceTest {
   @Test
   void pipelinedOversizedRequestKeepsRequestOrder() throws Exception {
     final var release = new java.util.concurrent.CountDownLatch(1);
-    final var builder = new NettyServerBuilder(256, 1);
+    final var builder = new NettyServerBuilder(256, 1, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
     builder.blockingQueryHandler("/slow", request -> {
       await(release);
       return HttpResponse.response("text/plain", "slow");
@@ -1338,6 +1371,32 @@ final class NettyConformanceTest {
       assertEquals(200, rawStatus(response), response);
       assertEquals("hi", rawBody(response), response);
       assertClosed(in);
+    }
+  }
+
+  /// A connection that sends nothing is closed by the server once the idle timeout has
+  /// elapsed — parity with the JDK backend's idle interval and Jetty's connector idle timeout
+  /// (both 30 s by default, as is this backend's, pinned by
+  /// `theDefaultIdleTimeoutMatchesTheOtherBackends`), observed here through the builder's
+  /// knob at 200 ms as the client's EOF. This is the suite's one case that waits on real time, and it waits for an event:
+  /// the 2 s socket bound is the fixture's emergency exit, ten times the timeout and inside
+  /// PIT's margin (recorded duration × 1.25 + 4 s), so a server that never closes fails by
+  /// `SocketTimeoutException`, not by the watchdog. The EOF must not come early either: the
+  /// server measures on the same `System.nanoTime` as this test and arms its deadline only
+  /// once the connection exists, so the elapsed time is bounded below by the timeout itself.
+  @Test
+  void anIdleConnectionIsClosedAfterTheIdleTimeout() throws Exception {
+    final var idleTimeout = Duration.ofMillis(200);
+    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, NettyServerBuilder.DEFAULT_IO_THREADS, idleTimeout);
+    builder.blockingQueryHandler("/p", request -> HttpResponse.response("text/plain", "p"));
+    final int port = start(builder);
+    final long connecting = System.nanoTime();
+    try (final var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(2_000);
+      assertEquals(-1, socket.getInputStream().read(), "the server must close an idle connection");
+      final long elapsed = System.nanoTime() - connecting;
+      assertTrue(elapsed >= idleTimeout.toNanos(),
+          "closed " + elapsed + " ns after connecting, inside the " + idleTimeout.toNanos() + " ns idle timeout");
     }
   }
 }

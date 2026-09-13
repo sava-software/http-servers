@@ -19,7 +19,7 @@ edges the ratchet cannot see.
 | http-servers-jetty | `pitestDispatch` | carries the load-flappy handled-flag family |
 | http-servers-fusionauth | `pitestDispatch`, `pitestLoggerShim` | see the partition note |
 | http-servers-helidon | `pitestDispatch` | 100%, empty baseline; no `loggerShim` partition (System.Logger reaches JUL with no shim), no socket-wait timeout family (Helidon's routing answers 500 for an unsent response) |
-| http-servers-netty | `pitestDispatch` | no accepted rows (the `# backpressure` row was pruned when ordering moved into `NettyRequestGate`); 2 s fixture bound, not 10 s (every hang it can produce is bounded, so a dropped write reads KILLED not TIMED_OUT) |
+| http-servers-netty | `pitestDispatch` | no accepted rows (the `# backpressure` row was pruned when ordering moved into `NettyRequestGate`); 2 s fixture bound, not 10 s (every hang it can produce is bounded, so a dropped write reads KILLED not TIMED_OUT); the idle timeout is pinned on an advanced fake clock in process (the loop's ticker, and the gate's clock at a negative origin), with one real-time socket case (200 ms timeout, 2 s bound) and a 1 ns re-arm floor so the deadline boundary mutant reads KILLED, not a frozen-clock TIMED_OUT; a stalled request body counts as idle (the slowloris shape closes one timeout after its last byte) and only a fully received request awaiting its response is exempt |
 | http-servers-hello | `pitestHello` | demo module, still ratcheted |
 | http-servers-sava | `pitestX402`, `pitestHandlers` | the payment-gate threat surface |
 

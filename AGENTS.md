@@ -395,19 +395,28 @@ at all.
 
 Netty 4.2.18 behind the shared `HandlerMap`. Each connection's pipeline is `HttpServerCodec` →
 `NettyRequestGate` → `NettyRequestAggregator` → `NettyController`: the gate owns response
-ordering and connection persistence (one request in flight per connection, reads paused while a
-complete request awaits its answer, `Connection: close` decided from both the request and the
-response), so the aggregator's own `100`, `417` and `413` answers are ordered by construction.
-The vendor BOM is pinned in the module until `solana-version-catalog` carries Netty.
+ordering, connection persistence and the idle timeout (one request in flight per connection,
+reads paused while a complete request awaits its answer, `Connection: close` decided from both
+the request and the response, and a connection that is neither carrying a fully received request
+awaiting its response nor making progress for 30 s — measured on an injected clock from the later
+of its last decoded read and its last completed response, so a stalled request body is idle and a
+request awaiting its handler never is — closed by the gate's own scheduled check), so the aggregator's own `100`,
+`417` and `413` answers are ordered by construction and no `IdleStateHandler` or `netty-handler`
+dependency is needed. The vendor BOM is pinned in the module until `solana-version-catalog`
+carries Netty.
 
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
   `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
-  `ServerBootstrap` chain all return their receiver. 132 mutants, **100% killed**, no accepted
+  `ServerBootstrap` chain all return their receiver. 144 mutants, **100% killed**, no accepted
   baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
   tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
   `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so
-  ordering, flow control, reference counts and framing are asserted in process.
+  ordering, flow control, reference counts, framing and the idle timeout are asserted in
+  process — the last on a fake clock that is the embedded loop's ticker (origin 10^12 ns) and,
+  offset to a negative origin as `System.nanoTime` may be, the gate's clock, advanced by the
+  test rather than waited on; the shipped 30 s default is what those cases measure against,
+  and is pinned by name in the socket suite.
 
 The former `# backpressure` accepted row (`NettyController.channelRead0`'s read pause) was
 retired through the Prune protocol when ordering moved into `NettyRequestGate`, where the same
@@ -421,6 +430,12 @@ can never fire inside PIT's own margin, so detection was the watchdog rather tha
 At 2 s each of those reads `KILLED`. Do not restore the 10 s convention without re-auditing the
 timeouts file. A history-assisted run on a machine whose `.pitest-history/` predates the retiming
 replays the old `TIMED_OUT` verdicts; run `-PnoMutationHistory` before any record decision.
+The suite's one real-time case is `anIdleConnectionIsClosedAfterTheIdleTimeout` (a 200 ms idle
+timeout through the builder knob, EOF read under the 2 s bound, and a causal lower bound on
+the elapsed time); `config/pitest/README.md` records its bound against PIT's margin, and it is
+now the suite's slowest covering test. The idle rule's oracle is split and recorded there: the
+JDK and Jetty both close a silent connection between requests; Jetty alone fails a stalled
+request body (the JDK holds it for good); neither interrupts a busy handler.
 
 ### http-servers-sava — x402 payment gate (`software.sava.http_servers.sava.x402`)
 

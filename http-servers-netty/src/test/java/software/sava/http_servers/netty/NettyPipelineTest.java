@@ -8,6 +8,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Ticker;
 import org.junit.jupiter.api.Test;
 import software.sava.http_servers.core.handlers.HandlerMap;
 import software.sava.http_servers.core.response.HttpResponse;
@@ -20,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 
@@ -31,11 +33,60 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// The production pipeline — `NettyChannelInitializer`'s codec, gate, aggregator and
 /// controller, with real routes — driven in process on an `EmbeddedChannel`, where every
 /// write completes synchronously, a blocking route completes exactly when the test runs it,
-/// the channel's read state is readable and a queued body's buffer can be watched for
-/// release. These are the deterministic seams a socket cannot offer for flow control,
-/// ownership and write failure; `NettyConformanceTest` pins the same ordering and
-/// persistence rules end to end over real sockets.
+/// the channel's read state is readable, a queued body's buffer can be watched for release
+/// and time is a clock the test advances. These are the deterministic seams a socket cannot
+/// offer for flow control, ownership, write failure and the idle timeout;
+/// `NettyConformanceTest` pins the same ordering and persistence rules end to end over real
+/// sockets.
 final class NettyPipelineTest {
+
+  /// The idle timeout every pipeline here is built with: the shipped default, so every idle
+  /// property below is a property of the value consumers get.
+  private static final long IDLE_TIMEOUT_NANOS = NettyServerBuilder.DEFAULT_IDLE_TIMEOUT.toNanos();
+
+  /// The clock the idle timeout is measured on. It is the embedded loop's ticker, which runs
+  /// the gate's scheduled check, and — read through `gateNanoTime()` — the gate's own clock,
+  /// so the check and the gate's arithmetic agree to the nanosecond. It moves only when a
+  /// test advances it. Neither origin is zero, and they differ on purpose: the ticker's is
+  /// 10^12 ns (Netty's scheduler reads a negative deadline as overflow, so its ticker cannot
+  /// start below zero), while the gate reads the same instants offset to a *negative* origin
+  /// — what `System.nanoTime` may deliver in production, where it is not the normalised
+  /// ticker either. A deadline computed from an absolute reading rather than a difference,
+  /// or a start time mutated to zero, is therefore visible here rather than equivalent by
+  /// accident of the origin.
+  private static final class FakeClock implements Ticker {
+    private static final long ORIGIN = 1_000_000_000_000L;
+    private static final long GATE_ORIGIN = -2_000_000_000_000L;
+    private long now = ORIGIN;
+
+    @Override
+    public long initialNanoTime() {
+      return ORIGIN;
+    }
+
+    @Override
+    public long nanoTime() {
+      return now;
+    }
+
+    /// The gate's reading of the same instant.
+    long gateNanoTime() {
+      return now - ORIGIN + GATE_ORIGIN;
+    }
+
+    @Override
+    public void sleep(final long delay, final TimeUnit unit) {
+      throw new UnsupportedOperationException("tests advance the clock; nothing sleeps");
+    }
+  }
+
+  /// Moves the clock on and runs whatever the loop had scheduled up to the new instant — the
+  /// idle check, when its deadline has come — surfacing anything it threw.
+  private static void advance(final EmbeddedChannel channel, final FakeClock clock, final long nanos) {
+    clock.now += nanos;
+    channel.runScheduledPendingTasks();
+    channel.checkException();
+  }
 
   /// Runs a blocking route only when the test says so, which makes "the response to the
   /// request in flight is written now" a synchronous step rather than a race.
@@ -95,15 +146,27 @@ final class NettyPipelineTest {
   private static final QueryHandler ECHO = request -> HttpResponse.response("text/plain", new String(request.body(), StandardCharsets.UTF_8));
   private static final QueryHandler CLOSING = request -> HttpResponse.response("text/plain", "bye").withHeader("Connection", "Close");
 
-  private static EmbeddedChannel pipeline(final Routes routes, final Executor executor, final int maxContentLength, final ChannelHandler... before) {
+  private static EmbeddedChannel pipeline(final Routes routes,
+                                          final Executor executor,
+                                          final int maxContentLength,
+                                          final FakeClock clock,
+                                          final ChannelHandler... before) {
     final var handlers = new ChannelHandler[before.length + 1];
     System.arraycopy(before, 0, handlers, 0, before.length);
-    handlers[before.length] = new NettyChannelInitializer(routes.handlerMap(), executor, maxContentLength);
-    return new EmbeddedChannel(handlers);
+    handlers[before.length] = new NettyChannelInitializer(routes.handlerMap(), executor, maxContentLength, IDLE_TIMEOUT_NANOS, clock::gateNanoTime);
+    return EmbeddedChannel.builder().ticker(clock).handlers(handlers).build();
+  }
+
+  private static EmbeddedChannel pipeline(final Routes routes, final Executor executor, final int maxContentLength, final ChannelHandler... before) {
+    return pipeline(routes, executor, maxContentLength, new FakeClock(), before);
+  }
+
+  private static EmbeddedChannel pipeline(final Routes routes, final Executor executor, final FakeClock clock) {
+    return pipeline(routes, executor, NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, clock);
   }
 
   private static EmbeddedChannel pipeline(final Routes routes, final Executor executor) {
-    return pipeline(routes, executor, NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH);
+    return pipeline(routes, executor, new FakeClock());
   }
 
   private static ByteBuf ascii(final String text) {
@@ -417,5 +480,219 @@ final class NettyPipelineTest {
     assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(Level.FINE)
             && r.getThrown() instanceof io.netty.handler.codec.PrematureChannelClosureException),
         "the abort is still traceable at DEBUG: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+  }
+
+  // ---- the idle timeout, on a clock the test advances ----
+
+  /// An open connection that carries no request is closed once the idle timeout has elapsed
+  /// since it was accepted — one tick short of it, it is still open — and the close writes
+  /// nothing: there is no response to frame. Oracle: the JDK backend's idle interval and
+  /// Jetty's connector idle timeout, both of which close a silent connection.
+  @Test
+  void anIdleConnectionIsClosedOnceTheTimeoutElapses() {
+    final var clock = new FakeClock();
+    final var channel = pipeline(new Routes().nonBlockingGet("/a", OK), Runnable::run, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "one tick short of the timeout the connection is still open");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "the idle timeout closes the connection");
+    assertTrue(wire(channel).isEmpty(), "an idle close writes nothing");
+  }
+
+  /// A fully received request awaiting its response is never idle, however long its handler
+  /// takes: the connection is held open across many timeouts, and the timeout then runs
+  /// afresh from the response's completion — closing exactly one full timeout after it, not
+  /// at the next check. Oracle: the JDK backend, whose request timeout defaults to unlimited
+  /// and which holds a connection with a request in progress for as long as it takes; Jetty's
+  /// connector timeout leaves a running handler alone too (its idle-timeout task fails only a
+  /// pending read or write, or hands the timeout to a listener the handler registered).
+  @Test
+  void aReceivedRequestAwaitingItsResponseIsNeverIdle() {
+    final var clock = new FakeClock();
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/slow", OK);
+    final var channel = pipeline(routes, executor, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 3);
+    channel.writeInbound(ascii(get("/slow")));
+    assertEquals(1, executor.pending.size());
+    for (int timeouts = 1; timeouts <= 5; ++timeouts) {
+      advance(channel, clock, IDLE_TIMEOUT_NANOS);
+      assertTrue(channel.isActive(), "a request in flight holds the connection open past " + timeouts + " timeouts");
+    }
+    // off the check's cadence, so the grace is measured from the completion, not the next check
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 3);
+    executor.runNext();
+    assertTrue(wire(channel).startsWith("http/1.1 200 ok"));
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "the client gets a full timeout of grace after the response");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "a full timeout after the response the connection is idle");
+    assertEquals(List.of("/slow"), routes.ran);
+  }
+
+  /// A request whose head has arrived but whose body then stops is silence, not work in
+  /// progress: the connection is closed one idle timeout after the last byte it decoded, with
+  /// nothing written and no handler run, so a client that sends a head and nothing more cannot
+  /// hold a connection open for free. Oracle: Jetty's connector idle timeout, which fails a
+  /// request that stops making progress (the JDK backend, whose request timeout defaults to
+  /// unlimited, holds such a connection for good — the one rule of the three this backend
+  /// does not follow). Closing a half-received request is the peer's loss, not a server
+  /// failure, so nothing is logged above DEBUG.
+  @Test
+  void aRequestWhoseBodyStopsArrivingIsIdle() {
+    final var clock = new FakeClock();
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingPost("/p", ECHO);
+    final var channel = pipeline(routes, executor, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 3);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    assertEquals(0, executor.pending.size(), "the request is not complete");
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "one tick short of a timeout since the last body byte the connection is still open");
+    final var logs = controllerLogs(() -> advance(channel, clock, 1));
+    assertFalse(channel.isActive(), "a body that stopped arriving a full timeout ago is idle");
+    assertTrue(wire(channel).isEmpty(), "an idle close writes nothing");
+    assertEquals(0, executor.pending.size(), "a request never received in full never reaches its handler");
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+        "closing a stalled request is not a server failure: " + logs.stream().map(LogRecord::getMessage).toList());
+  }
+
+  /// The `100 Continue` the aggregator writes on the head invites the body; it is not activity
+  /// of the client's. A client that never takes the invitation up is closed one timeout after
+  /// its head, and the interim response is all that is ever written.
+  @Test
+  void aContinueNeverFollowedByABodyIsIdle() {
+    final var clock = new FakeClock();
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 3);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\n"));
+    assertTrue(wire(channel).startsWith("http/1.1 100 continue"));
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "one tick short of a timeout since the head the connection is still open");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "a body that never followed the 100 is idle");
+    assertTrue(wire(channel).isEmpty(), "nothing follows the interim response");
+    assertEquals(List.of(), routes.ran);
+  }
+
+  /// An upload that is slow but progressing is never idle: every decoded chunk renews the
+  /// deadline, so a body whose next byte lands one tick before each deadline, across several
+  /// timeouts, is received in full and answered — and the request then waits for its handler
+  /// as long as that takes, with the usual full timeout of grace after the answer.
+  @Test
+  void aProgressingUploadIsNeverIdle() {
+    final var clock = new FakeClock();
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingPost("/p", ECHO);
+    final var channel = pipeline(routes, executor, clock);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\n"));
+    for (final String chunk : List.of("a", "b", "c")) {
+      advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+      assertTrue(channel.isActive(), "one tick short of the deadline, before chunk " + chunk + ", the connection is still open");
+      channel.writeInbound(ascii(chunk));
+      assertTrue(channel.config().isAutoRead(), "the rest of the body must be read");
+    }
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "the last chunk renewed the deadline");
+    channel.writeInbound(ascii("d"));
+    assertEquals(1, executor.pending.size(), "received in full, the request is dispatched");
+    advance(channel, clock, 3 * IDLE_TIMEOUT_NANOS);
+    assertTrue(channel.isActive(), "received in full, the request waits for its handler as long as that takes");
+    executor.runNext();
+    assertTrue(wire(channel).endsWith("abcd"));
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "the client gets a full timeout of grace after the response");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "a full timeout after the response the connection is idle");
+    assertEquals(List.of("/p"), routes.ran);
+  }
+
+  /// Activity resets the deadline: a request answered one tick before the idle deadline
+  /// pushes the close out by a full timeout from that answer, so the check that then fires
+  /// finds time still to run and re-arms for exactly that.
+  @Test
+  void activityResetsTheIdleDeadline() {
+    final var clock = new FakeClock();
+    final var routes = new Routes().nonBlockingGet("/a", OK);
+    final var channel = pipeline(routes, Runnable::run, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    channel.writeInbound(ascii(get("/a")));
+    assertTrue(wire(channel).startsWith("http/1.1 200 ok"));
+    advance(channel, clock, 1);
+    assertTrue(channel.isActive(), "the original deadline no longer applies: the request renewed it");
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 2);
+    assertTrue(channel.isActive(), "one tick short of the renewed deadline the connection is still open");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "a full timeout after the last response the connection is idle");
+    assertEquals(List.of("/a"), routes.ran);
+  }
+
+  /// A pipelined request waiting behind the one in flight is work owed, not silence: the
+  /// connection outlives the idle deadline while it waits, serves it once the first completes,
+  /// and is idle only once the last response has been out for a full timeout.
+  @Test
+  void aQueuedRequestKeepsTheConnectionAlive() {
+    final var clock = new FakeClock();
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).blockingGet("/b", OK);
+    final var channel = pipeline(routes, executor, clock);
+    channel.writeInbound(ascii(get("/a") + get("/b")));
+    assertEquals(1, executor.pending.size(), "/b waits behind /a");
+    for (int timeouts = 1; timeouts <= 3; ++timeouts) {
+      advance(channel, clock, IDLE_TIMEOUT_NANOS);
+      assertTrue(channel.isActive(), "a queued request holds the connection open past " + timeouts + " timeouts");
+    }
+    executor.runNext();
+    assertEquals(1, executor.pending.size(), "/a's completion releases /b");
+    for (int timeouts = 1; timeouts <= 3; ++timeouts) {
+      advance(channel, clock, IDLE_TIMEOUT_NANOS);
+      assertTrue(channel.isActive(), "the released request holds the connection open past " + timeouts + " timeouts");
+    }
+    executor.runNext();
+    assertEquals(List.of("/a", "/b"), routes.ran);
+    assertEquals(2, count(wire(channel), "http/1.1 200 ok"));
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "one tick short of a full timeout after the last response");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "idle only once the last response has been out for a full timeout");
+  }
+
+  /// The peer closing while a request is in flight and another is queued behind it — the
+  /// transport's own close path, not one this server decided — releases the queued body with
+  /// the pipeline and leaves no idle check behind: nothing runs, throws or is written however
+  /// far the clock then moves. Closed through the pipeline rather than `EmbeddedChannel.close()`,
+  /// which cancels every scheduled task itself and would mask the gate's own cancellation.
+  @Test
+  void aPeerCloseReleasesTheQueueAndTheIdleCheck() {
+    final var clock = new FakeClock();
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).blockingPost("/b", ECHO);
+    final var channel = pipeline(routes, executor, clock);
+    final var inbound = ascii(get("/a") + "POST /b HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\nxyz");
+    channel.writeInbound(inbound);
+    assertEquals(1, inbound.refCnt(), "the queued body chunk holds the inbound buffer");
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 2);
+
+    channel.pipeline().close();
+    assertFalse(channel.isActive());
+    assertEquals(0, inbound.refCnt(), "the queued body is released with the pipeline");
+    assertEquals(-1, channel.runScheduledPendingTasks(), "no idle check outlives the connection");
+    advance(channel, clock, 10 * IDLE_TIMEOUT_NANOS);
+    assertTrue(wire(channel).isEmpty(), "nothing is written to a closed connection");
+    assertEquals(List.of(), routes.ran, "the queued request never runs");
+  }
+
+  /// After the idle close nothing is scheduled on the loop for the dead connection: moving
+  /// the clock on runs nothing, throws nothing and writes nothing.
+  @Test
+  void noTaskOutlivesAnIdleClosedConnection() {
+    final var clock = new FakeClock();
+    final var channel = pipeline(new Routes().nonBlockingGet("/a", OK), Runnable::run, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS);
+    assertFalse(channel.isActive());
+    assertEquals(-1, channel.runScheduledPendingTasks(), "an idle-closed connection holds no task");
+    advance(channel, clock, 100 * IDLE_TIMEOUT_NANOS);
+    assertTrue(wire(channel).isEmpty(), "nothing is written to a closed connection");
   }
 }

@@ -16,7 +16,8 @@ reason below.
 Registered with the module. It mutates the whole `software.sava.http_servers.netty`
 package against `netty.*Test*`: the per-connection pipeline in the order the
 initializer builds it — `NettyRequestGate` (one request at a time, the pipelining
-queue, the read pause, and the connection's persistence), `NettyRequestAggregator`
+queue, the read pause, the connection's persistence and, since 2026-09-13, its idle
+timeout on an injected clock), `NettyRequestAggregator`
 (the explicit `413`-and-close policy over Netty's aggregator), `NettyController`
 (routing and the 400/404/405 JSON bodies, CORS and pre-flights, the blocking-route
 offload, `exceptionCaught` and its client-abort classification) — plus the request
@@ -25,17 +26,41 @@ The covering tests are real socket round trips (`NettyConformanceTest`,
 `NettyPostHandlerTest`) and, since the 2026-09-12 gate rework, the same production
 pipeline driven in process on an `EmbeddedChannel` (`NettyPipelineTest`, built from
 the real `NettyChannelInitializer`), where a write completes synchronously, a blocking
-route completes when the test runs it, and the channel's read state is readable.
+route completes when the test runs it, the channel's read state is readable and —
+since the idle timeout — time is a clock the test advances (`FakeClock`: the embedded
+loop's `Ticker` at origin 10^12 ns and, read through `gateNanoTime()` at a *negative*
+origin of −2·10^12 ns — what `System.nanoTime` may deliver in production, unlike the
+normalised ticker — the gate's clock, so the two agree in differences and disagree in
+absolute readings, which is what makes a deadline computed from an absolute reading, or
+an accept time mutated to zero, observable).
 
-After the gate rework the population is **132 mutants, 132 killed, 0 `SURVIVED`,
-0 `TIMED_OUT`, 0 `NO_COVERAGE`**, observed history-free three times on the final code
-(`pitestDispatch -PnoMutationHistory` twice, then `pitestDispatchBaselinePrune`'s own
-write-boundary run) under 1-minute load averages of 21–27, `pitestDispatchVerify`
-green. Line coverage of the mutated classes is 218/220; the two uncovered lines are
-`ResponseUtil`'s private constructor, which nothing calls and which generates no
-mutant. There is no `dispatch-accepted.csv`: the prune below removed the last row
-and the plugin removes the file with it. Keep it that way. (History: the first seed
-was 106/105/1 and the review-application pass 110/109/1.)
+After the idle-timeout review (2026-09-13: the stalled-body fix, the knob validation and
+the tests below) the population is **144 mutants, 144 killed, 0 `SURVIVED`, 0
+`TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed history-free on the final code
+(`pitestDispatch -PnoMutationHistory`, PIT's mutation phase 10 s, 648 test executions,
+4.5 per mutant) under a 1-minute load average of 29 at the start and 39 at the end,
+`pitestDispatchVerify` 144/144, `mutationOwnershipAudit` 12 classes owned. The two
+mutants added are `NettyServerBuilder.<init>`'s `RemoveConditional` pair on the
+idle-timeout validation, both killed (below). Line coverage of the mutated classes is
+242/244. (The idle timeout's first observation, the same day and before the review, read
+142/142 under a load average of 5.75, `pitestDispatchVerify` green.) The attempt before that, on
+the same code under a load average of 8.92, produced the identical 142-mutant
+population with 141 killed and one `RUN_ERROR` — a minion death at
+`NettyRequestAggregator.handleOversizedMessage` / `VoidMethodCallMutator`, PIT's only
+diagnosis the generic "did not start or died during analysis", no resource failure
+named — which the verifier refused as invalid evidence; nothing was tuned, and the
+clean run is its closure, not its diagnosis. The two uncovered lines are still
+`ResponseUtil`'s private constructor. There is still no `dispatch-accepted.csv`. Keep it that way. (History: the first
+seed was 106/105/1, the review-application pass 110/109/1, and the 2026-09-12 gate
+rework 132/132/0, observed history-free three times — `pitestDispatch
+-PnoMutationHistory` twice, then `pitestDispatchBaselinePrune`'s own write-boundary
+run — under 1-minute load averages of 21–27; line coverage of the mutated classes was
+then 218/220, the two uncovered lines being `ResponseUtil`'s private constructor,
+which nothing calls and which generates no mutant. The prune removed the last
+accepted row and the plugin removed the file with it.) The review run's input
+identity differs from the 142-mutant run's, so the plugin reset the timeout-quiet
+counter and the prune-preview matches with it — state-reset notices, not findings;
+there is no timeout member to retire and no accepted row to prune.
 
 ### Mutators: `STRONGER,EXPERIMENTAL_NAKED_RECEIVER` (measured 2026-09-12)
 
@@ -85,6 +110,19 @@ in the socket suite, every `readResponse` caller) are the second line and the
 The bound is a fixture safety net, never the claimed oracle for a `SURVIVED`
 row; there are no such rows.
 
+One case waits on real time, and it is the only one:
+`anIdleConnectionIsClosedAfterTheIdleTimeout` builds a server through the builder's
+`idleTimeout` knob at 200 ms, opens a socket, sends nothing and reads EOF. It waits
+for an event (the server's close), never sleeps, and its 2 s socket bound is the
+emergency exit: ten times the timeout, and inside PIT's margin — the recorded
+duration (206 ms in the clean run's coverage phase) × 1.25 + 4000 ms ≈ 4.3 s — so a mutant that
+never closes fails as `SocketTimeoutException` at 2 s, an assertion-level kill, not a
+`TIMED_OUT`. It also asserts the EOF did not come *early*: the server's clock and the
+test's are one `System.nanoTime`, and the deadline is armed only once the connection
+exists, so `elapsed >= 200 ms` is a causal lower bound, not a timing guess. Every
+other idle-timeout property is pinned on the advanced clock in `NettyPipelineTest`,
+which is where PIT's time-ordered prioritiser runs first.
+
 ### Accepted rows (`dispatch-accepted.csv`)
 
 None. The one row this suite ever carried, `# backpressure`
@@ -102,6 +140,39 @@ previews with the identical single-row candidate multiset, then
 
 ### Refactored out (no rows)
 
+- `NettyRequestGate.checkIdle` / `scheduleIdleCheck` — the idle check re-arms itself
+  for the time still to run (`remaining = timeout - (now - lastActivity)`), closing
+  when `remaining <= 0`. The `ConditionalsBoundaryMutator` on that comparison (`< 0`)
+  re-arms for a delay of zero at the exact deadline, and on the embedded loop a task
+  scheduled for the current instant is polled again in the same `runScheduledTasks`
+  drain — an infinite loop inside Netty that no fixture bound can reach, i.e. a
+  `TIMED_OUT` under a frozen clock, not a kill. The re-arm is therefore floored at one
+  nanosecond in `scheduleIdleCheck` (`Math.max(delayNanos, 1L)`, a static call the
+  enabled mutators leave alone), which turns that mutant into an observable "still open
+  at the deadline" that `anIdleConnectionIsClosedOnceTheTimeoutElapses` fails by
+  assertion. The other mutant this set produces on the comparison is
+  `RemoveConditionalMutator_ORDER_IF` (always close), killed by
+  `aRequestWhoseBodyStopsArrivingIsIdle`; the always-re-arm direction
+  (`RemoveConditionalMutator_ORDER_ELSE`) is not generated under this mutator set —
+  the fresh report carries none anywhere in the population — and is pinned by test
+  regardless: hand-forcing the branch to `false` fails
+  `anIdleConnectionIsClosedOnceTheTimeoutElapses` and the socket case, and would also be
+  a zero re-arm the floor converts. The floor is unreachable in unmutated code (the
+  else-branch's `remaining` is positive) and harmless on a real loop.
+- `NettyRequestGate.checkIdle`'s exemption is `paused()` alone (`inFlight &&
+  bodyComplete`: a fully received request awaiting its response), not
+  `paused() || !queued.isEmpty()`: nothing can be queued while nothing is in flight
+  (the drain in `completed` stops only at a request in flight or an empty queue),
+  so a queue term would be a compound condition whose sibling mutants are
+  equivalent by that invariant. The property it would have stated — a queued
+  pipelined request keeps the connection alive — is pinned by
+  `aQueuedRequestKeepsTheConnectionAlive`. Before the 2026-09-13 review the test was
+  `inFlight` alone, which exempted a request whose head had arrived and whose body had
+  stopped — a client sending a head and nothing more held its connection for ever,
+  writing nothing (the slowloris shape; found by review with a socket probe at a
+  300 ms knob: a head-only `POST`, an unanswered `100 Continue` and an unterminated
+  chunked body all still open after 3 s while a silent connection closed at 328 ms).
+  The regression tests below failed against that code before the one-token fix.
 - `NettyRequestGate.handlerRemoved` — the first draft released the queue with
   `while ((msg = queued.poll()) != null)`; `RemoveConditional` on that exit turns it
   into an infinite loop over `release(null)`, which read `TIMED_OUT` on the first
@@ -137,6 +208,66 @@ previews with the identical single-row candidate multiset, then
 
 ### Killed by pinning rather than accepted
 
+- The idle timeout (2026-09-13). The oracle is split, because the two reference
+  backends do not agree past the first case. *A silent connection between requests is
+  closed after 30 s*: both — the JDK backend's `idleInterval`
+  (`ServerConfig.DEFAULT_IDLE_INTERVAL_IN_SECS = 30`) and Jetty's connector idle timeout
+  (`AbstractConnector._idleTimeout = 30000`). *A request whose body has stopped is
+  closed*: Jetty alone — `HttpConnection.onIdleExpired` hands the timeout to
+  `HttpChannelState.onIdleTimeout`, which fails a pending read (a handler waiting for
+  the body gets a `500` and the connection closes: standalone 12.1.12 probe at a 300 ms
+  timeout, head-only `POST` closed at 313 ms); the JDK holds it for good
+  (`DEFAULT_MAX_REQ_TIME = -1`; this repo's JDK backend probed at
+  `-Dsun.net.httpserver.idleInterval=1`: a silent connection closed at 1004 ms, a
+  head-only `POST` still open at 8 s). *A fully received request awaiting its handler
+  is never timed out*: both — the JDK by the same `-1`, and Jetty because
+  `onIdleExpired` returns `!handlingRequest` and `onIdleTimeout` only fails a pending
+  read or write (standalone probe: a handler blocking 1500 ms under the 300 ms timeout
+  was still answered `200`). The gate follows the majority on each: idle is
+  `!paused()` and no progress. Every branch of `NettyRequestGate.checkIdle` —
+  `paused()` both ways, `remaining <= 0` at the boundary and as `ORDER_IF`, both `-`
+  operators of the remaining-time arithmetic — every mutant of `paused()`, and the
+  scheduled lambda's `checkIdle` call are pinned in process on the advanced clock:
+  `anIdleConnectionIsClosedOnceTheTimeoutElapses` (closed at the deadline, open one
+  nanosecond before, nothing written), `aReceivedRequestAwaitingItsResponseIsNeverIdle`
+  (open across five timeouts with a blocking route pending, then closed exactly one
+  full timeout after the response and not at the next check),
+  `aRequestWhoseBodyStopsArrivingIsIdle` (a head and two of four body bytes, then
+  silence: open one nanosecond short of a timeout after the last byte, closed at it,
+  nothing written, no handler run, nothing logged above `DEBUG`),
+  `aContinueNeverFollowedByABodyIsIdle` (the aggregator's `100` is not the client's
+  activity), `aProgressingUploadIsNeverIdle` (a chunk one nanosecond before each of
+  three deadlines keeps the connection, the completed request then waits for its
+  handler across three more timeouts, and the grace after the answer is a full timeout),
+  `activityResetsTheIdleDeadline` (a request answered one nanosecond before the
+  deadline defers the close by a full timeout — the check that fires with time still to
+  run must re-arm), `aQueuedRequestKeepsTheConnectionAlive`,
+  `aPeerCloseReleasesTheQueueAndTheIdleCheck` (a close through the pipeline — the
+  transport's path, unlike `EmbeddedChannel.close()`, which cancels every scheduled task
+  itself — releases the queued body and leaves `runScheduledPendingTasks()` at −1) and
+  `noTaskOutlivesAnIdleClosedConnection`. The builder's knob and `System::nanoTime`
+  plumbing are pinned end to end by the one real-time case above; the knob's
+  validation (`NettyServerBuilder.<init>`, `RemoveConditional` both ways: never refuse
+  is killed by `anUnusableIdleTimeoutIsRefusedAtConstruction`, always refuse by every
+  test that builds a server) refuses zero, negative, null and nanosecond-overflowing
+  timeouts at construction rather than inside `createServer`.
+- Three idle-timeout statements generate no mutant and are pinned by test anyway,
+  each verified by deleting the statement in place and re-running `NettyPipelineTest`
+  (the file restored byte-for-byte afterwards): `NettyServerBuilder.DEFAULT_IDLE_TIMEOUT`
+  is a static initializer (PIT filters `<clinit>` code and `INLINE_CONSTS` is not in
+  this set), so `NettyConformanceTest.theDefaultIdleTimeoutMatchesTheOtherBackends`
+  asserts the 30 s the README promises and `NettyPipelineTest` measures every idle
+  property against `DEFAULT_IDLE_TIMEOUT.toNanos()` rather than a private copy; the
+  accept-time `lastActivity` in `handlerAdded` (a field store from a non-void call) is
+  visible only because the gate's clock has a negative origin — deleted, the first check
+  finds an enormous `remaining` and never closes, failing
+  `anIdleConnectionIsClosedOnceTheTimeoutElapses` and
+  `noTaskOutlivesAnIdleClosedConnection` (under the earlier single-origin clock the same
+  deletion was green: at the first deadline `remaining` is 0 for the right value and
+  negative for 0, both a close); and the read refresh in `channelRead`, deleted, fails
+  `aProgressingUploadIsNeverIdle`, `aRequestWhoseBodyStopsArrivingIsIdle` and
+  `aContinueNeverFollowedByABodyIsIdle` (it was unobservable before the review, when a
+  read could only ever precede an exempt in-flight state).
 - Ordering by construction (RFC 9112 §9.3.2), the 2026-09-12 P1 fix: the gate
   forwards a request head only while nothing is in flight and completes the in-flight
   request on the write of a non-informational response, whoever wrote it. Every
@@ -216,10 +347,14 @@ before the first `hardeningCertify`.
 
 ### Slow-covering-test advisory
 
-The plugin's coverage-phase advisory names `absentHostBindsAllInterfaces` at
-246–251 ms against its 250 ms threshold: the case starts two servers (a `null`
-host and a blank one) and two `HttpClient`s. Advisory only, recorded so it is
-the first thing to look at if this suite ever shows a load-dependent `TIMED_OUT`.
+Since the idle timeout the suite's slowest covering test is
+`anIdleConnectionIsClosedAfterTheIdleTimeout` — 206 ms in both 2026-09-13 history-free
+runs, against the plugin's 250 ms threshold, and real wall-clock time by construction (a
+200 ms knob waited out for an EOF), not work. No coverage-phase advisory fired in
+either run, but that case is the first thing to look at if this suite ever shows a
+load-dependent `TIMED_OUT`. History: before it, the advisory named
+`absentHostBindsAllInterfaces` at 246–251 ms (two servers — a `null` host and a blank
+one — and two `HttpClient`s), which remains the second candidate.
 
 ## Audited timeouts (`dispatch-timeouts.csv`)
 
@@ -236,12 +371,18 @@ because neither is liveness: `NettyRequestGate.handlerRemoved`'s
 `RemoveConditionalMutator_EQUAL_IF` (a loop whose exit was removed — refactored out,
 above) and `NettyController.dispatch`'s `VoidMethodCallMutator` on the pre-flight
 `Content-Length: 0` (the finite head-only-response race — repaired in process, above).
-Any future `TIMED_OUT` in this suite is, by construction, a covering test that
-exceeded its bound *and* PIT's margin, or a head-only response an `HttpClient` case
-was left to wait on: a `SURVIVED`↔`TIMED_OUT` flip of a row that should already be
-argued here, or a `KILLED`↔`TIMED_OUT` finite race to be repaired with a wire
-assertion — never a liveness argument, since every hang this suite can produce is
-bounded.
+The idle timeout (2026-09-13) added a third shape and refactored it out before it
+was observed: a re-arm for zero delay under the frozen test clock is an infinite loop
+inside `EmbeddedEventLoop.runScheduledTasks`, which no fixture bound reaches; the
+one-nanosecond floor in `NettyRequestGate.scheduleIdleCheck` ("Refactored out", above)
+makes the boundary mutant fail by assertion instead. Both history-free runs on the
+final code (142 mutants before the review, 144 after it) read zero `TIMED_OUT`. Any future `TIMED_OUT` in this suite is, by
+construction, a covering test that exceeded its bound *and* PIT's margin, a head-only
+response an `HttpClient` case was left to wait on, or a scheduled task re-armed for
+the instant it runs in: a `SURVIVED`↔`TIMED_OUT` flip of a row that should already be
+argued here, or a `KILLED`↔`TIMED_OUT` finite race to be repaired with a wire or
+clock assertion — never a liveness argument, since every hang this suite can produce
+is bounded.
 
 One trap worth naming: a history-assisted run (`pitestDispatch` without
 `-PnoMutationHistory`) on a machine whose `.pitest-history/` predates the 2 s

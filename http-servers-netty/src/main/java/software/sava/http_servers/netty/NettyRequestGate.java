@@ -15,6 +15,10 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 
 import java.util.ArrayDeque;
+import java.util.concurrent.Future;
+import java.util.function.LongSupplier;
+
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 /// One connection's sequencing, placed between the HTTP codec and the aggregator so that
 /// every party that answers a request — the aggregator (`100`, `417`, `413`), the controller
@@ -53,29 +57,93 @@ import java.util.ArrayDeque;
 /// malformed-request `400` and its `exceptionCaught` `500`, and the aggregator's `413` all end
 /// the connection the same way: by putting `Connection: close` on their response.
 ///
-/// Every field is event-loop confined: `channelRead`, `write` and the completion listener all
-/// run on the channel's loop. Completion can run synchronously inside a write issued from the
-/// drain (an inline route answering a small response), so the drain re-reads its state after
-/// each forward instead of assuming it. Queued objects are owned here until forwarded, and
-/// released when the handler leaves the pipeline, which every close does.
+/// **Idle timeout.** A connection is idle when it is neither carrying a fully received request
+/// that awaits its response nor making progress, and it is closed once the idle timeout has
+/// elapsed since the later of its last decoded read and its last completed response. That
+/// covers a silent connection between requests — what the JDK backend's idle interval and
+/// Jetty's connector idle timeout close — and a request whose head has arrived but whose body
+/// has stopped (a client that sends a head and then nothing, the slowloris shape: Jetty fails
+/// and closes it too when the handler is waiting for that body, while the JDK, whose request
+/// timeout defaults to unlimited, holds it for good): while a body is still owed the check
+/// applies, and because every decoded chunk refreshes the clock, an upload that is slow but
+/// progressing is never idle. The exemption is exactly the paused state — a received request
+/// awaiting its answer, however long its handler takes: the check that finds one re-arms for
+/// a full timeout, and the clock is read again at the response's completion, so a client gets
+/// the full timeout of grace after every answer (neither of those backends interrupts a
+/// handler that is busy rather than waiting on I/O either). A request queued behind the one
+/// in flight needs no rule of its own — nothing can be queued while nothing is in flight,
+/// because the drain stops only at a request in flight or an empty queue — so the paused
+/// state alone says whether the connection is exempt. The check is one scheduled task per connection on
+/// its own loop, re-armed lazily for the time still to run rather than reset on every read,
+/// cancelled when the handler leaves the pipeline; the close writes nothing and releases
+/// whatever was queued through the same removal path every close takes. The clock is
+/// injected so the timeout is tested by advancing time, never by waiting.
+///
+/// Every field is event-loop confined: `channelRead`, `write`, the completion listener and
+/// the idle check all run on the channel's loop. Completion can run synchronously inside a
+/// write issued from the drain (an inline route answering a small response), so the drain
+/// re-reads its state after each forward instead of assuming it. Queued objects are owned
+/// here until forwarded, and released when the handler leaves the pipeline, which every close
+/// does.
 final class NettyRequestGate extends ChannelDuplexHandler {
 
   private final ArrayDeque<Object> queued;
+  private final long idleTimeoutNanos;
+  private final LongSupplier clock;
   private boolean inFlight;
   private boolean bodyComplete;
   // the in-flight request's persistence inputs; an unsolicited response (a transport failure
   // with nothing in flight) is framed as HTTP/1.1 keep-alive, which its close header overrides
   private HttpVersion requestVersion;
   private boolean requestKeepAlive;
+  // the clock at the accept, the last decoded read or the last completed response: the idle
+  // deadline runs from it
+  private long lastActivity;
+  private Future<?> idleCheck;
 
-  NettyRequestGate() {
+  NettyRequestGate(final long idleTimeoutNanos, final LongSupplier clock) {
     this.queued = new ArrayDeque<>();
+    this.idleTimeoutNanos = idleTimeoutNanos;
+    this.clock = clock;
     this.requestVersion = HttpVersion.HTTP_1_1;
     this.requestKeepAlive = true;
   }
 
   @Override
+  public void handlerAdded(final ChannelHandlerContext ctx) {
+    // the initializer adds this handler to a registered channel, so the executor is the
+    // connection's event loop and the accept is the first activity
+    lastActivity = clock.getAsLong();
+    scheduleIdleCheck(ctx, idleTimeoutNanos);
+  }
+
+  /// Arms the check for `delayNanos` from now — never for this very instant: a zero delay
+  /// would run it again in the same drain of the loop's scheduled tasks.
+  private void scheduleIdleCheck(final ChannelHandlerContext ctx, final long delayNanos) {
+    idleCheck = ctx.executor().schedule(() -> checkIdle(ctx), Math.max(delayNanos, 1L), NANOSECONDS);
+  }
+
+  /// Runs on the loop at each armed deadline: re-arms for a full timeout while a fully
+  /// received request awaits its response (activity is then measured from its completion),
+  /// closes the connection once the timeout has elapsed since the last activity — a body the
+  /// client still owes counts as activity only as its chunks arrive — and otherwise re-arms
+  /// for the time still to run.
+  private void checkIdle(final ChannelHandlerContext ctx) {
+    if (paused()) {
+      scheduleIdleCheck(ctx, idleTimeoutNanos);
+      return;
+    }
+    final long remaining = idleTimeoutNanos - (clock.getAsLong() - lastActivity);
+    if (remaining <= 0) {
+      ctx.close();
+    } else {
+      scheduleIdleCheck(ctx, remaining);
+    }
+  }
+
+  @Override
   public void channelRead(final ChannelHandlerContext ctx, final Object msg) {
+    lastActivity = clock.getAsLong();
     if (queued.isEmpty() && !(inFlight && msg instanceof HttpRequest)) {
       forward(ctx, msg);
       pauseOrResume(ctx);
@@ -134,6 +202,7 @@ final class NettyRequestGate extends ChannelDuplexHandler {
 
   private void completed(final ChannelHandlerContext ctx) {
     inFlight = false;
+    lastActivity = clock.getAsLong();
     Object next;
     while (!paused() && (next = queued.poll()) != null) {
       forward(ctx, next);
@@ -144,7 +213,9 @@ final class NettyRequestGate extends ChannelDuplexHandler {
   @Override
   public void handlerRemoved(final ChannelHandlerContext ctx) {
     // reached by every close: the pipeline is destroyed once the closed channel deregisters,
-    // and this handler goes with it, so the emptied queue needs no clearing
+    // and this handler goes with it, so the emptied queue needs no clearing and the idle
+    // check must not outlive the connection
+    idleCheck.cancel(false);
     queued.forEach(ReferenceCountUtil::release);
   }
 }
