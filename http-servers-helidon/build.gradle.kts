@@ -4,10 +4,6 @@ plugins {
 
 dependencies {
   project(":http-servers-core")
-  // The sava version catalog (solana-version-catalog) carries no Helidon entry yet, so the
-  // vendor BOM pins every io.helidon.* module resolved from module-info here. The pin moves
-  // to solana-version-catalog once it gains a Helidon row; drop this line then.
-  implementation(platform("io.helidon:helidon-bom:4.5.4"))
   // H2C (HTTP/2 cleartext) is opt-in. Without helidon-webserver-http2 Helidon answers every
   // HTTP/1.0 request with a clean 505; with it on the module path an HTTP/1.0 request is
   // answered with nothing — the connection is closed with zero bytes when a Host header is

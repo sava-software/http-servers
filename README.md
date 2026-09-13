@@ -37,10 +37,9 @@ dependencies {
 }
 ```
 
-`solana-version-catalog` carries no Helidon or Netty entry yet, so `http-servers-helidon` and
-`http-servers-netty` pin their own vendor BOMs. Depending on either module is enough to resolve
-its server; consumers add no extra lines for it. The pins move into the version catalog once it
-carries those vendors.
+`solana-version-catalog` 25.30.21 and later carry the Helidon and Netty modules the two newest
+backends require, so depending on `http-servers-helidon` or `http-servers-netty` is enough to
+resolve its server; consumers add no extra lines for it.
 
 ## Usage
 

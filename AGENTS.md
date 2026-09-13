@@ -361,8 +361,8 @@ because since value decoding landed the parser is no longer just a splitter. See
 ### http-servers-helidon — Helidon backend (`software.sava.http_servers.helidon`)
 
 Helidon WebServer 4.5.4 behind the shared `HandlerMap`, reached from one catch-all route so
-Helidon's own routing never decides a match. The vendor BOM is pinned in the module until
-`solana-version-catalog` carries Helidon.
+Helidon's own routing never decides a match. Versions come from `solana-version-catalog`
+(25.30.21 and later).
 
 - `./gradlew :http-servers-helidon:pitestDispatch` — PIT over the whole `helidon` package
   (wildcard) against `helidon.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER`
@@ -409,8 +409,8 @@ in request order: a refusal resets the codec (Netty's `HttpExpectationFailedEven
 right only while the codec still stands on that head, so the decision cannot wait for the
 request's turn even though its answer does. The aggregator keeps the `100 Continue` and the
 oversized-body `413`, both ordered behind the gate by construction, and no `IdleStateHandler` or
-`netty-handler` dependency is needed. The vendor BOM is pinned in the module until
-`solana-version-catalog` carries Netty.
+`netty-handler` dependency is needed. Versions come from `solana-version-catalog` (25.30.21 and
+later).
 
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because

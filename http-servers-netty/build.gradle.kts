@@ -4,10 +4,6 @@ plugins {
 
 dependencies {
   project(":http-servers-core")
-  // solana-version-catalog 25.30.16 carries no io.netty entry (its only Netty artifact is
-  // gRPC's shaded copy), so the vendor BOM pins the codec/transport/buffer/common versions
-  // here. Move the pin into solana-version-catalog once it carries Netty.
-  implementation(platform("io.netty:netty-bom:4.2.18.Final"))
 }
 
 testModuleInfo {
