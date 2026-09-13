@@ -112,15 +112,6 @@ edges the ratchet cannot see.
   rather than declined so a default method added to `Request` later joins the
   mutated population by default; `targetTests` stays narrow, so that first
   default method is owed a test in the response suite's test scope.
-- **The netty baseline carries a schema header the other seven do not.**
-  `http-servers-netty/config/pitest/dispatch-accepted.csv` begins
-  `!sava-hardening-baseline-schema,1` because it was seeded fresh with the current
-  plugin, which stamps it; the seven pre-existing baselines predate the stamp and
-  are still in the unstamped form. This mixed state is a seed artifact, not a
-  decision, and is intentionally left alone: a schema migration is done only with a
-  fleet pin plan (`migrateMutationBaselines` / `downgradeMutationBaselines` across
-  the repo at once), never as a side effect of adding one module. A future
-  `downgradeMutationBaselines` should expect to touch netty only.
 - **Two class-path worlds.** PIT minions run on the class path while the test
   tasks run on the module path. Real services are declared in both
   `module-info` and `META-INF/services`; test-only providers are covered via
