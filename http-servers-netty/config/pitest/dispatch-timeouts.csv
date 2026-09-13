@@ -1,0 +1,13 @@
+# Audited TIMED_OUT set for the 'dispatch' suite (HARDENING.md, the audited-timeout
+# bullet): line-less class,method,mutator keys plus a cause category, one per member.
+# A timed-out mutant outside this set is a reviewer-stop — the ratchet cannot see a
+# weakened covering assertion behind a timeout. Structural causes live in README.md.
+#
+# The set is intentionally EMPTY and armed: every hang this suite can produce is bounded
+# at 2 s by its own fixtures (README.md, "Fixture bound"), which fails the covering test
+# before PIT's watchdog can fire, so a dropped write reads KILLED, never TIMED_OUT.
+# pitestDispatchTimeoutAuditInit refused to seed on 2026-09-12 — "no timed-out mutants in
+# this run's report" — after three fresh, full, history-free observations (the seed run,
+# the BaselineUpdate run and the TimeoutAuditInit run itself), all under a load average
+# of 80–135, each reading zero TIMED_OUT copies. The file is kept so the suite's first
+# timeout lands as the reviewer-stop it is rather than as silent detection.

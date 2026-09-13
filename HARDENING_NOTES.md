@@ -18,6 +18,8 @@ edges the ratchet cannot see.
 | http-servers-jdk | `pitestDispatch` | 100%, empty baseline |
 | http-servers-jetty | `pitestDispatch` | carries the load-flappy handled-flag family |
 | http-servers-fusionauth | `pitestDispatch`, `pitestLoggerShim` | see the partition note |
+| http-servers-helidon | `pitestDispatch` | 100%, empty baseline; no `loggerShim` partition (System.Logger reaches JUL with no shim), no socket-wait timeout family (Helidon's routing answers 500 for an unsent response) |
+| http-servers-netty | `pitestDispatch` | no accepted rows (the `# backpressure` row was pruned when ordering moved into `NettyRequestGate`); 2 s fixture bound, not 10 s (every hang it can produce is bounded, so a dropped write reads KILLED not TIMED_OUT) |
 | http-servers-hello | `pitestHello` | demo module, still ratcheted |
 | http-servers-sava | `pitestX402`, `pitestHandlers` | the payment-gate threat surface |
 
@@ -34,7 +36,7 @@ edges the ratchet cannot see.
   `Allow`, 500 for throwing handlers, custom status/header propagation, cached
   JSON responses, case-insensitive header lookup, a never-null body, and CORS
   pre-flight handling (a blank requested method is not a pre-flight). These
-  are socket-level oracles shared by all three backends, not framework-local
+  are socket-level oracles shared by all five backends, not framework-local
   conveniences.
 - **Socket kills are load-sensitive.** Every adapter dispatch suite kills
   through real socket round trips, so detection wall clock rides on gate
@@ -110,6 +112,15 @@ edges the ratchet cannot see.
   rather than declined so a default method added to `Request` later joins the
   mutated population by default; `targetTests` stays narrow, so that first
   default method is owed a test in the response suite's test scope.
+- **The netty baseline carries a schema header the other seven do not.**
+  `http-servers-netty/config/pitest/dispatch-accepted.csv` begins
+  `!sava-hardening-baseline-schema,1` because it was seeded fresh with the current
+  plugin, which stamps it; the seven pre-existing baselines predate the stamp and
+  are still in the unstamped form. This mixed state is a seed artifact, not a
+  decision, and is intentionally left alone: a schema migration is done only with a
+  fleet pin plan (`migrateMutationBaselines` / `downgradeMutationBaselines` across
+  the repo at once), never as a side effect of adding one module. A future
+  `downgradeMutationBaselines` should expect to touch netty only.
 - **Two class-path worlds.** PIT minions run on the class path while the test
   tasks run on the module path. Real services are declared in both
   `module-info` and `META-INF/services`; test-only providers are covered via
@@ -131,7 +142,7 @@ edges the ratchet cannot see.
   cross-module tests are outside the owning suite's pattern. That is why the
   probe-and-branch fixture lives in core's own test sources.
 - **No fuzz workflow, on purpose.** CI owns `check`; the local release checklist
-  owns `hardeningCertifyAll` (six project receipts, twelve suites, no running
+  owns `hardeningCertifyAll` (eight project receipts, fourteen suites, no running
   sentinel) and `fuzzAll` (all five registered targets). Record both
   `maxFuzzTime` and `maxParallelFuzzTargets`. A manual GitHub campaign may be
   added for optional exploration, but this repo does not treat one as release

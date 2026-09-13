@@ -35,7 +35,13 @@ final class HelloServerTests {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"JDKHttpServerBuilderFactory", "JettyServerBuilderFactory", "FusionAuthBuilderFactory"})
+  @ValueSource(strings = {
+      "JDKHttpServerBuilderFactory",
+      "JettyServerBuilderFactory",
+      "FusionAuthBuilderFactory",
+      "HelidonBuilderFactory",
+      "NettyBuilderFactory"
+  })
   void helloServesAndExcludedPathDoesNot(final String factoryName) throws Exception {
     final int port = startRetrying(factoryName);
 
@@ -52,14 +58,14 @@ final class HelloServerTests {
   }
 
   /// The only end-to-end exercise of `HttpServerBuilderFactory.findFirst`'s success path:
-  /// this module has all three backends on the path, so discovery must yield a builder in
+  /// this module has all five backends on the path, so discovery must yield a builder in
   /// both worlds the tools run in (module path here, class path under PIT minions). The
   /// path stays an accepted `NO_COVERAGE` in core's own suite — core ships no provider —
   /// but it is no longer unobserved.
   @Test
   void findFirstDiscoversABackend() {
     assertNotNull(software.sava.http_servers.core.server.HttpServerBuilderFactory.findFirst(),
-        "three backends provide HttpServerBuilderFactory; findFirst must yield a builder");
+        "five backends provide HttpServerBuilderFactory; findFirst must yield a builder");
   }
 
   @Test

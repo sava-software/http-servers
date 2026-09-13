@@ -5,16 +5,21 @@ A small HTTP server abstraction for Java 25 with pluggable backends. Write handl
 
 ## Modules
 
-| Module                    | Description                                                                |
-|---------------------------|----------------------------------------------------------------------------|
-| `http-servers-core`       | The API: `Request`, `HttpResponse`, handler registration, routing, wiring.  |
-| `http-servers-jdk`        | Backend over the JDK's built-in `jdk.httpserver`. No extra dependencies.    |
-| `http-servers-jetty`      | Backend over Jetty 12. HTTP/1.1 and H2C, optional gzip, CORS.               |
-| `http-servers-fusionauth` | Backend over [java-http](https://github.com/FusionAuth/java-http). CORS.    |
-| `http-servers-hello`      | Runnable demo wiring one handler against any of the backends.               |
+| Module                    | Description                                                                      |
+|---------------------------|----------------------------------------------------------------------------------|
+| `http-servers-core`       | The API: `Request`, `HttpResponse`, handler registration, routing, wiring.       |
+| `http-servers-jdk`        | Backend over the JDK's built-in `jdk.httpserver`. No extra dependencies.         |
+| `http-servers-jetty`      | Backend over Jetty 12. HTTP/1.1 and H2C, optional gzip, CORS.                    |
+| `http-servers-fusionauth` | Backend over [java-http](https://github.com/FusionAuth/java-http). CORS.         |
+| `http-servers-helidon`    | Backend over Helidon WebServer 4. HTTP/1.1 on virtual threads, H2C opt-in, CORS. |
+| `http-servers-netty`      | Backend over Netty 4.2. HTTP/1.1 on the Netty codec, CORS.                       |
+| `http-servers-hello`      | Runnable demo wiring one handler against any of the backends.                    |
 
 Depend on `http-servers-core` plus exactly one backend. The backends are interchangeable: the same
 handlers, registration calls and routing semantics apply to all of them.
+
+Wherever a backend's own wire behaviour differs from the rest, the difference is written down
+under [Backend divergences](#backend-divergences).
 
 ## Dependency configuration
 
@@ -31,6 +36,11 @@ dependencies {
   runtimeOnly("org.eclipse.jetty.compression:jetty-compression-gzip")
 }
 ```
+
+`solana-version-catalog` carries no Helidon or Netty entry yet, so `http-servers-helidon` and
+`http-servers-netty` pin their own vendor BOMs. Depending on either module is enough to resolve
+its server; consumers add no extra lines for it. The pins move into the version catalog once it
+carries those vendors.
 
 ## Usage
 
@@ -111,12 +121,98 @@ HttpResponse.json(402, "{\"error\":\"payment required\"}")
 
 A handler that throws is answered with `500`, and the failure is logged.
 
+#### Backend divergences
+
+Routing, status codes, header propagation and the raw path and query contract are identical on
+every backend. The framing a server puts around a response is its own, so the contract below is
+what a caller may rely on rather than the bytes any one backend happens to emit.
+
+**Bodyless statuses.** A `204` or a `304` is sent without a body everywhere, and no backend
+chunks either of them. `Content-Length: 0` is the backend's own choice: the JDK and Netty
+backends send neither `Content-Length` nor `Transfer-Encoding` on either status, Jetty omits
+`Content-Length` on `204` and sends `Content-Length: 0` on `304`, and FusionAuth and Helidon send
+`Content-Length: 0` on both. Assert that `Content-Length` is absent or exactly `0`, never that it
+is present. Helidon treats `205` as bodyless too, because that is its own no-entity set, so
+content a handler attaches to a `205` is dropped there and sent by every other backend.
+
+**Executors.** Handlers run on virtual threads. The `Executor` handed to `createServer` is
+honoured on the blocking path by the JDK, Jetty and Netty backends, which dispatch blocking
+request handling onto it. Netty runs non-blocking routes and cached responses inline on its event
+loop instead. FusionAuth and Helidon own their worker threads and ignore the executor, so code
+that needs to observe or bound handler dispatch has to pick the JDK, Jetty or Netty backend.
+
+**HTTP/1.0.** The JDK, Jetty, FusionAuth and Netty backends answer an `HTTP/1.0` request, subject
+to the `Host` rule below, and close the connection afterwards unless it asks for
+`Connection: keep-alive`. Helidon refuses it with `505`. Every backend replies in `HTTP/1.1`
+whatever version the request names.
+
+**The `Host` header.** RFC 9112 makes `Host` mandatory from `HTTP/1.1` onwards, and Jetty enforces
+exactly that: `400` for an `HTTP/1.1` request without one or with a blank one, and a normal answer
+to the `HTTP/1.0` form. FusionAuth requires `Host` on every request, `HTTP/1.0` included, and
+answers `400` without it. Helidon answers `400` for an `HTTP/1.1` request with a missing or blank
+`Host`, and refuses the `HTTP/1.0` form before that rule applies. The JDK and Netty backends
+require it on neither version.
+
+**An empty query.** A request target ending in a bare `?` reaches the handler as an empty `query()`
+on the JDK, Jetty and Netty backends and as `null` on FusionAuth and Helidon. Treat the empty
+string and `null` alike; `HandlerUtil` already does.
+
+**H2C.** Jetty serves cleartext HTTP/2 out of the box. Helidon serves it once
+`io.helidon.webserver:helidon-webserver-http2` is added as a `runtimeOnly` dependency, which also
+replaces its clean `HTTP/1.0` `505` with no answer at all: the connection is closed with zero
+bytes when a `Host` header is present and held open until the idle timeout when it is not. Do not
+enable it in front of `HTTP/1.0` clients. The JDK, FusionAuth and Netty backends speak HTTP/1.1
+only.
+
+**Connection persistence.** A handler that sets `Connection: close` on its response ends the
+connection after that response on every backend: the header reaches the wire and the server
+closes. Persistence is decided from both sides — the request's keep-alive and the response's
+close directive — so a keep-alive request answered with `Connection: close` does not stay open.
+
+**Pipelining on Netty.** Netty serves one request per connection at a time and answers pipelined
+requests strictly in request order (RFC 9112 §9.3.2), whoever produces the answer: a handler, the
+controller's own `400`/`404`/`405`/`500`, or the codec's `100 Continue`, `417` and `413`. A
+request the codec refuses waits its turn behind the request in flight exactly as a routed one
+does, so a client never pairs a refusal with the wrong request. While a fully received request
+awaits its response the connection is not read, which stalls a client that pipelines without
+reading answers instead of buffering it without bound. A request's own `Connection: close` is
+honoured whether a handler or the codec answered it, and nothing pipelined behind a closing
+response is processed (§9.6).
+
+**Request-body size on Netty.** Netty aggregates a request body up to 64 MiB, a bound the other
+backends do not impose. A body declared or received past that limit is answered `413` in request
+order with `Connection: close` and `Content-Length: 0`, and the connection is then closed: the body
+is never read, so a client still sending it may see the connection reset before it has read the
+`413`. The one exception is a request that announced the oversized body with
+`Expect: 100-continue`, which is refused with `413` before any body is sent and keeps its
+connection. An `Expect` the server does not support is answered `417` in request order and the
+connection stays open. Put the Netty backend behind a proxy if you need a different limit; the
+other backends stream the body with no aggregation cap.
+
+**Stopping on Netty.** `stop()` is immediate for the socket: the listener and every open
+connection are cut at once, in-flight blocking handlers included. It then waits for the event-loop
+threads to exit, so a non-blocking handler that blocks the loop against its contract delays the
+return by its own duration. The other backends do not wait on handler code in `stop()`. A
+connection that closes while a request body is still arriving — a client abandoning an upload, or
+a refused request that asked to close — is not a server failure on Netty: it is logged at `DEBUG`,
+nothing is answered.
+
+**Idle connections on Netty.** Netty holds an open but silent connection until the client closes
+it, where the JDK and Jetty backends close an idle connection after about 30 s. Sit the Netty
+backend behind a proxy that bounds idle connections if that matters.
+
+**Absolute-form targets.** A request line in absolute form, `GET http://host/p HTTP/1.1`, is
+refused with `400` by Netty and FusionAuth, which route on the target as received. The JDK and
+Jetty servers reduce it to its path first and serve it, and Jetty additionally answers `400` when
+the `Host` header names a different authority than the target does.
+
 ### CORS
 
-The Jetty and FusionAuth backends reflect the request `Origin` into `Access-Control-Allow-Origin`
-and answer pre-flight `OPTIONS` requests for any method that resolves to a handler. These servers
-are expected to sit behind a proxy or gateway that owns origin policy and authentication. The JDK
-backend has no CORS handling.
+The Jetty, FusionAuth, Helidon and Netty backends reflect the request `Origin` into
+`Access-Control-Allow-Origin` and answer pre-flight `OPTIONS` requests for any method that
+resolves to a handler. These servers are expected to sit behind a proxy or gateway that owns
+origin policy and authentication. The JDK backend has no CORS handling, so a pre-flight `OPTIONS`
+is simply an unrouted method there and is answered with `405` and an `Allow` header.
 
 ### Conditional registration
 

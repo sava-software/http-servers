@@ -5,8 +5,10 @@ plugins {
 val idlClientModules = setOf(
   "core",
   "fusionauth",
+  "helidon",
   "jdk",
   "jetty",
+  "netty",
   "sava"
 )
 

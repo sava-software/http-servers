@@ -1,0 +1,13 @@
+# Audited TIMED_OUT set for the 'dispatch' suite (HARDENING.md, the audited-timeout
+# bullet): line-less class,method,mutator keys plus a cause category, one per member.
+# A timed-out mutant outside this set is a reviewer-stop — the ratchet cannot see a
+# weakened covering assertion behind a timeout. Structural causes live in README.md.
+#
+# The set is intentionally EMPTY and armed: the suite has never timed out. Seeded
+# 2026-09-12 from three fresh history-free full runs (73/73 detected, zero TIMED_OUT,
+# solo load averages 22-88) — pitestDispatchTimeoutAuditInit refused to write a member
+# and prescribed this comment-only file so the suite's first timeout lands as the
+# reviewer-stop it is. Why this backend has no socket-wait family: a controller or
+# handler that returns without completing the response is answered 500 by Helidon's
+# routing itself ("A route MUST call either send, reroute, or next"), so a dropped
+# send() is a status mismatch, never a client hang.

@@ -1,7 +1,8 @@
 # http-servers
 
 Java 25 multi-module library providing a small HTTP server abstraction (`http-servers-core`)
-with pluggable backends (`http-servers-jdk`, `http-servers-jetty`, `http-servers-fusionauth`),
+with pluggable backends (`http-servers-jdk`, `http-servers-jetty`, `http-servers-fusionauth`,
+`http-servers-helidon`, `http-servers-netty`),
 a demo module (`http-servers-hello`), and an x402 payment gate for the Solana `exact` scheme
 (`http-servers-sava`). Built with the shared `software.sava.build` Gradle plugin (same plugin
 family as the `sava` repo); the `hardening` convention plugin provides PIT mutation testing and
@@ -285,8 +286,8 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 <!-- hardening-template sha256:714041431f01 -->
 
 CI owns `check`; the local release checklist owns `hardeningCertifyAll` and
-the explicit `fuzzAll` campaign. Complete certification means six project
-receipts covering twelve suites with no `.running` sentinel. The fuzz campaign
+the explicit `fuzzAll` campaign. Complete certification means eight project
+receipts covering fourteen suites with no `.running` sentinel. The fuzz campaign
 must record both its time budget and parallel-target limit and exercise all five
 registered targets: `formatPlaceholders`, `pathCanonicalizer`, `handlerUtil`,
 `svmVerify`, and `x402Payload`.
@@ -356,6 +357,70 @@ reference, required to agree on every input — value, absence, integers, or exc
 because since value decoding landed the parser is no longer just a splitter. Seeds live under
 `src/test/resources/fuzz/handlerUtil` and are replayed by the generated
 `HandlerUtilFuzzSeedReplayTest`.
+
+### http-servers-helidon — Helidon backend (`software.sava.http_servers.helidon`)
+
+Helidon WebServer 4.5.4 behind the shared `HandlerMap`, reached from one catch-all route so
+Helidon's own routing never decides a match. The vendor BOM is pinned in the module until
+`solana-version-catalog` carries Helidon.
+
+- `./gradlew :http-servers-helidon:pitestDispatch` — PIT over the whole `helidon` package
+  (wildcard) against `helidon.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER`
+  because `ServerResponse.status`/`header` and `WebServerConfig.Builder` are fluent, so a dropped
+  header or listener setting is invisible to `VoidMethodCallMutator` (trial 2026-09-12: 13
+  generated, 13 killed). 77 mutants, **100% killed**, no accepted baseline file and an empty,
+  armed `dispatch-timeouts.csv` — keep both that way. The covering tests are real socket round
+  trips in `HelidonConformanceTest` and `HelidonPostHandlerTest`.
+
+The suite carries no socket-wait timeout family, unlike the jdk and jetty dispatch suites: a
+controller or handler that returns without completing the response is answered 500 by Helidon's
+own routing, so a dropped `send()` is a status mismatch the covering test sees at once rather
+than a client blocked on a read. There is no `loggerShim` partition either — Helidon logs through
+`System.Logger`, which reaches JUL with nothing installed, so there is no adapter-owned shim to
+mutate.
+
+Three adapter contracts the ratchet cannot infer are pinned by name: `initRestServer` returns an
+unstarted `WebServerConfig.Builder` because a Helidon `WebServer` cannot be restarted once
+stopped, so `HelidonHttpServer` builds it inside `start()` and refuses a second start
+(`secondStartThrowsAndTheRunningServerIsUndisturbed`); `WebServer.start()` logs a bind failure
+instead of throwing, so the adapter converts a not-running server into an `IOException` naming
+the address (`startOnAnOccupiedPortThrows`); and `ResponseUtil` owns the bodyless set {204, 205,
+304}, which is Helidon's no-entity set rather than the 204/304 the other backends use
+(`bodylessStatusesDropAnAttachedBody`). Helidon's HTTP/1.0 `505` is pinned as a refusal by
+`http10RequestIsAnswered`, which is also the guard on the H2C decision recorded in
+`build.gradle.kts`: with `helidon-webserver-http2` on the path that clean 505 becomes no answer
+at all.
+
+### http-servers-netty — Netty backend (`software.sava.http_servers.netty`)
+
+Netty 4.2.18 behind the shared `HandlerMap`. Each connection's pipeline is `HttpServerCodec` →
+`NettyRequestGate` → `NettyRequestAggregator` → `NettyController`: the gate owns response
+ordering and connection persistence (one request in flight per connection, reads paused while a
+complete request awaits its answer, `Connection: close` decided from both the request and the
+response), so the aggregator's own `100`, `417` and `413` answers are ordered by construction.
+The vendor BOM is pinned in the module until `solana-version-catalog` carries Netty.
+
+- `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
+  against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
+  `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
+  `ServerBootstrap` chain all return their receiver. 132 mutants, **100% killed**, no accepted
+  baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
+  tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
+  `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so
+  ordering, flow control, reference counts and framing are asserted in process.
+
+The former `# backpressure` accepted row (`NettyController.channelRead0`'s read pause) was
+retired through the Prune protocol when ordering moved into `NettyRequestGate`, where the same
+shape is killed by the in-process `isAutoRead()` assertions. The reasoning, and the sites
+refactored out rather than accepted, are in `config/pitest/README.md`.
+
+This suite's fixtures bound every `HttpClient` request and raw socket at 2 s where the sibling
+adapter suites use 10 s, and that bound is load-bearing for the records: the first pass at 10 s
+read 31 `TIMED_OUT` instances over 24 keys, every one a dropped response write, and a 10 s bound
+can never fire inside PIT's own margin, so detection was the watchdog rather than an assertion.
+At 2 s each of those reads `KILLED`. Do not restore the 10 s convention without re-auditing the
+timeouts file. A history-assisted run on a machine whose `.pitest-history/` predates the retiming
+replays the old `TIMED_OUT` verdicts; run `-PnoMutationHistory` before any record decision.
 
 ### http-servers-sava — x402 payment gate (`software.sava.http_servers.sava.x402`)
 

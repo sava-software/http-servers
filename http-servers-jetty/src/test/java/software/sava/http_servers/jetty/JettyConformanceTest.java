@@ -435,21 +435,88 @@ final class JettyConformanceTest {
     }
   }
 
-  /// Raw-socket GET so the request target crosses the wire exactly as written — HttpClient
-  /// normalizes or refuses the ambiguous targets these cases exist to pin.
-  private static String rawGet(final int port, final String requestTarget) throws Exception {
+  /// One raw-socket exchange, written onto the wire exactly as given and read until the
+  /// server closes the connection. HttpClient normalizes or refuses the ambiguous targets
+  /// these cases exist to pin, always speaks HTTP/1.1, and always sends a Host header, so
+  /// none of those shapes can be expressed through it. `closed` is false when the 10 s
+  /// SO_TIMEOUT expired with the connection still open; for an HTTP/1.0 request that is the
+  /// property under test, not a harness failure.
+  private record RawExchange(String response, boolean closed) {
+  }
+
+  private static RawExchange rawExchange(final int port, final String request) throws Exception {
     try (final var socket = new java.net.Socket("127.0.0.1", port)) {
       socket.setSoTimeout(10_000);
       final var out = socket.getOutputStream();
-      out.write(("GET " + requestTarget + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
-          .getBytes(StandardCharsets.US_ASCII));
+      out.write(request.getBytes(StandardCharsets.US_ASCII));
       out.flush();
-      return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+      final var in = socket.getInputStream();
+      final var received = new java.io.ByteArrayOutputStream();
+      final byte[] chunk = new byte[4096];
+      boolean closed = true;
+      try {
+        for (int read; (read = in.read(chunk)) >= 0; ) {
+          received.write(chunk, 0, read);
+        }
+      } catch (final java.net.SocketTimeoutException e) {
+        closed = false;
+      }
+      return new RawExchange(received.toString(StandardCharsets.ISO_8859_1), closed);
     }
+  }
+
+  /// Raw-socket GET so the request target crosses the wire exactly as written.
+  /// A `Connection: close` request is answered and then closed, so a backend that leaves the
+  /// socket open cannot pass by waiting out the read timeout.
+  private static String rawGet(final int port, final String requestTarget) throws Exception {
+    final var exchange = rawExchange(port,
+        "GET " + requestTarget + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    org.junit.jupiter.api.Assertions.assertTrue(exchange.closed(),
+        "the server must close after Connection: close: " + exchange.response());
+    return exchange.response();
   }
 
   private static int rawStatus(final String response) {
     return Integer.parseInt(response.substring(9, 12));
+  }
+
+  /// First value of `name` in the raw response head, or null when the header is absent.
+  /// Matching is case-insensitive because header case is each backend's own: the jdk server
+  /// writes `Content-length`, jetty `Content-Length`, and java-http lower-cases everything.
+  private static String rawHeader(final String response, final String name) {
+    final int endOfHead = response.indexOf("\r\n\r\n");
+    final var head = endOfHead < 0 ? response : response.substring(0, endOfHead);
+    final var lines = head.split("\r\n");
+    for (int i = 1; i < lines.length; ++i) {
+      final int colon = lines[i].indexOf(':');
+      if (colon > 0 && lines[i].substring(0, colon).trim().equalsIgnoreCase(name)) {
+        return lines[i].substring(colon + 1).trim();
+      }
+    }
+    return null;
+  }
+
+  private static String rawBody(final String response) {
+    final int endOfHead = response.indexOf("\r\n\r\n");
+    return endOfHead < 0 ? "" : response.substring(endOfHead + 4);
+  }
+
+  /// Bodyless-status framing on the wire: never chunked, never a body, and a Content-Length
+  /// that is either absent or exactly `0`. `expectedContentLength` is this backend's choice
+  /// between those two, asserted precisely so a change of framing fails here instead of
+  /// quietly widening the contract.
+  ///
+  /// The Content-Type assertion is what keeps the rest honest. Every other check here expects
+  /// a header to be missing, so a rawHeader that always answered null would satisfy them all
+  /// while proving nothing; pinning a header that is present makes the absences mean absence.
+  /// It is also a property in its own right: dropping the body does not drop the declared type.
+  private static void assertBodylessFraming(final String response, final String expectedContentLength) {
+    assertEquals(expectedContentLength, rawHeader(response, "Content-Length"), response);
+    org.junit.jupiter.api.Assertions.assertNull(rawHeader(response, "Transfer-Encoding"),
+        "a bodyless status must never be chunked: " + response);
+    assertEquals("text/plain", rawHeader(response, "Content-Type"),
+        "a bodyless status keeps its declared content type: " + response);
+    assertEquals("", rawBody(response), response);
   }
 
   @Test
@@ -493,6 +560,21 @@ final class JettyConformanceTest {
         "canonicalization decides routing only; the handler-visible path stays raw: " + response);
   }
 
+  /// HTTP/1.0 with no Host header, written straight onto the socket: HttpClient always
+  /// speaks HTTP/1.1 and always sends Host, so this shape exists nowhere else in the suite.
+  /// RFC 9112 s3.2 makes Host mandatory only from HTTP/1.1 onwards, so the 1.0 form is a
+  /// well-formed request and has to be answered rather than refused.
+  @Test
+  void http10RequestIsAnswered() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/p", request -> HttpResponse.response("text/plain", "hello")));
+    final var exchange = rawExchange(port, "GET /p HTTP/1.0\r\n\r\n");
+    assertEquals(200, rawStatus(exchange.response()), exchange.response());
+    assertEquals("hello", rawBody(exchange.response()), exchange.response());
+    org.junit.jupiter.api.Assertions.assertTrue(exchange.closed(),
+        "HTTP/1.0 defaults to close, so the server ends the response by closing: " + exchange.response());
+  }
+
   @Test
   void noContentAndNotModifiedCrossTheWireWithoutABody() throws Exception {
     final int port = serve(builder -> {
@@ -510,6 +592,11 @@ final class JettyConformanceTest {
       assertEquals(304, notModified.statusCode());
       assertEquals("", notModified.body());
     }
+
+    // and on the raw wire: jetty omits Content-Length on 204 and sends an explicit
+    // "Content-Length: 0" on 304, and chunks neither
+    assertBodylessFraming(rawGet(port, "/gone"), null);
+    assertBodylessFraming(rawGet(port, "/same"), "0");
   }
 
   @Test
