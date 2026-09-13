@@ -58,9 +58,18 @@ final class ResponseUtil {
     return response(statusCode, APPLICATION_JSON, Map.of(), json.getBytes(StandardCharsets.UTF_8), null);
   }
 
+  /// A response with no body, framed `Content-Length: 0` so a client on a persistent connection
+  /// can delimit it (RFC 9112 §6.3): the pre-flight `200`, the gate's `417` and both `413`s.
+  static FullHttpResponse emptyResponse(final HttpResponseStatus status) {
+    final var response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.EMPTY_BUFFER);
+    HttpUtil.setContentLength(response, 0);
+    return response;
+  }
+
   /// Marks `response` as the connection's last: `NettyRequestGate` closes the connection once
   /// a response carrying `Connection: close` is out (RFC 9112 §9.6), whoever produced it — a
-  /// handler through its own headers, or the controller and aggregator through this.
+  /// handler through its own headers, or the controller, the gate and the aggregator through
+  /// this.
   static FullHttpResponse closeAfter(final FullHttpResponse response) {
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     return response;

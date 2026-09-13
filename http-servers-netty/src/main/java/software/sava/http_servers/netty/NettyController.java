@@ -3,15 +3,11 @@ package software.sava.http_servers.netty;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.PrematureChannelClosureException;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpUtil;
-import io.netty.handler.codec.http.HttpVersion;
-import io.netty.buffer.Unpooled;
 import software.sava.http_servers.core.handlers.HandlerMap;
 
 import java.util.concurrent.Executor;
@@ -37,8 +33,11 @@ import static java.lang.System.Logger.Level.ERROR;
 ///
 /// Known divergences from the other backends:
 /// - A body past the builder's `maxContentLength` (64 MiB for consumers) is answered 413 in
-///   request order by [NettyRequestAggregator], before this controller sees the request, and
-///   the connection is then closed; the other backends have no such limit.
+///   request order — by [NettyRequestGate] when `Expect: 100-continue` announced it, by
+///   [NettyRequestAggregator] otherwise — before this controller sees the request, and the
+///   connection is then closed; the other backends have no such limit. An `Expect` the server
+///   does not support is answered 417 by the gate, in request order, and the connection
+///   stays open.
 /// - A request the codec cannot parse arrives with a failed decoder result and is answered
 ///   400 (`"Malformed request."`) before the connection is closed — the other servers refuse
 ///   such requests in their own layer.
@@ -49,9 +48,9 @@ import static java.lang.System.Logger.Level.ERROR;
 ///   routes a throw from `channelRead` to the throwing handler's `exceptionCaught` whether the
 ///   read was fired by the socket or by the gate's drain — which answers 500 and closes.
 /// - A connection that closes while a request body is still arriving — the client aborted
-///   an upload, or a request the aggregator refused (417) asked to close — is reported by
-///   Netty's aggregator as a `PrematureChannelClosureException`. That is the peer going
-///   away, not a failure of this server: it is logged at `DEBUG` and nothing is written.
+///   an upload — is reported by Netty's aggregator as a `PrematureChannelClosureException`.
+///   That is the peer going away, not a failure of this server: it is logged at `DEBUG` and
+///   nothing is written.
 /// - An HTTP/1.1 request without a `Host` header (or with a blank one) is answered, not
 ///   refused with the 400 RFC 9112 §3.2 asks for — parity with the JDK backend; Jetty,
 ///   FusionAuth and Helidon refuse it.
@@ -144,8 +143,7 @@ final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest>
       if (origin != null && preFlight) {
         // the requested method resolved to a handler, so it is allowed; without this
         // header browsers reject the pre-flight
-        final var response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, Unpooled.EMPTY_BUFFER);
-        HttpUtil.setContentLength(response, 0);
+        final var response = ResponseUtil.emptyResponse(HttpResponseStatus.OK);
         final var responseHeaders = response.headers();
         responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
         responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, method);

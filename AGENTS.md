@@ -397,23 +397,30 @@ Netty 4.2.18 behind the shared `HandlerMap`. Each connection's pipeline is `Http
 `NettyRequestGate` → `NettyRequestAggregator` → `NettyController`: the gate owns response
 ordering, connection persistence and the idle timeout (one request in flight per connection,
 reads paused while a complete request awaits its answer, `Connection: close` decided from both
-the request and the response, and a connection that is neither carrying a fully received request
+the request and the response — framed for the request's version, or as HTTP/1.1 for a head the
+codec could not parse, so the close its `400` carries is signalled whatever version the codec
+invented for an unparsable line — and a connection that is neither carrying a fully received request
 awaiting its response nor making progress for 30 s — measured on an injected clock from the later
 of its last decoded read and its last completed response, so a stalled request body is idle and a
-request awaiting its handler never is — closed by the gate's own scheduled check), so the aggregator's own `100`,
-`417` and `413` answers are ordered by construction and no `IdleStateHandler` or `netty-handler`
-dependency is needed. The vendor BOM is pinned in the module until `solana-version-catalog`
-carries Netty.
+request awaiting its handler never is — closed by the gate's own scheduled check), and refuses
+expectations itself — an unsupported `Expect` with `417`, an `Expect: 100-continue` announcing a
+body over the limit with `413` and a close — the moment the codec hands over the head, answering
+in request order: a refusal resets the codec (Netty's `HttpExpectationFailedEvent`), which is
+right only while the codec still stands on that head, so the decision cannot wait for the
+request's turn even though its answer does. The aggregator keeps the `100 Continue` and the
+oversized-body `413`, both ordered behind the gate by construction, and no `IdleStateHandler` or
+`netty-handler` dependency is needed. The vendor BOM is pinned in the module until
+`solana-version-catalog` carries Netty.
 
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
   `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
-  `ServerBootstrap` chain all return their receiver. 144 mutants, **100% killed**, no accepted
+  `ServerBootstrap` chain all return their receiver. 180 mutants, **100% killed**, no accepted
   baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
   tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
   `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so
-  ordering, flow control, reference counts, framing and the idle timeout are asserted in
-  process — the last on a fake clock that is the embedded loop's ticker (origin 10^12 ns) and,
+  ordering, flow control, reference counts, framing, the expectation refusals and the idle
+  timeout are asserted in process — the last on a fake clock that is the embedded loop's ticker (origin 10^12 ns) and,
   offset to a negative origin as `System.nanoTime` may be, the gate's clock, advanced by the
   test rather than waited on; the shipped 30 s default is what those cases measure against,
   and is pinned by name in the socket suite.

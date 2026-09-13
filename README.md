@@ -171,31 +171,38 @@ close directive — so a keep-alive request answered with `Connection: close` do
 
 **Pipelining on Netty.** Netty serves one request per connection at a time and answers pipelined
 requests strictly in request order (RFC 9112 §9.3.2), whoever produces the answer: a handler, the
-controller's own `400`/`404`/`405`/`500`, or the codec's `100 Continue`, `417` and `413`. A
-request the codec refuses waits its turn behind the request in flight exactly as a routed one
-does, so a client never pairs a refusal with the wrong request. While a fully received request
+controller's own `400`/`404`/`405`/`500`, the codec's `100 Continue` and `413`, or the `417` and
+`413` with which an expectation is refused. A refusal waits its turn behind the request in
+flight exactly as a routed answer does, so a client never pairs it with the wrong request — but
+it is *decided* the moment the request head is decoded, because refusing an expectation tells the
+codec that the refused body is not coming and what follows the head is the next request line,
+and that is only true of the request the codec is standing on. While a fully received request
 awaits its response the connection is not read, which stalls a client that pipelines without
 reading answers instead of buffering it without bound. A request's own `Connection: close` is
-honoured whether a handler or the codec answered it, and nothing pipelined behind a closing
+honoured whether a handler answered it or it was refused, and nothing pipelined behind a closing
 response is processed (§9.6).
 
 **Request-body size on Netty.** Netty aggregates a request body up to 64 MiB, a bound the other
 backends do not impose. A body declared or received past that limit is answered `413` in request
 order with `Connection: close` and `Content-Length: 0`, and the connection is then closed: the body
 is never read, so a client still sending it may see the connection reset before it has read the
-`413`. The one exception is a request that announced the oversized body with
-`Expect: 100-continue`, which is refused with `413` before any body is sent and keeps its
-connection. An `Expect` the server does not support is answered `417` in request order and the
-connection stays open. Put the Netty backend behind a proxy if you need a different limit; the
-other backends stream the body with no aggregation cap.
+`413`. That includes a request announcing the oversized body with `Expect: 100-continue`, which
+is refused the same way before any of the body is read — a 100-continue client may send it
+without waiting, and it is never read either way. An `Expect` the server does not support is
+answered `417` in request order, with `Content-Length: 0`, and the connection stays open; a
+client that sends the body of a refused request anyway has those bytes read as its next request
+line, which is Netty's own outcome: an unroutable line is answered as such, an unparsable one
+with `400`, `Connection: close` and the close itself. A malformed request head is `400` whatever
+`Expect` it carried (or the `413` and close its declared length would earn it without one), and an
+`Expect` on an `HTTP/1.0` request is ignored (RFC 9110 §10.1.1). Put the Netty backend behind a
+proxy if you need a different limit; the other backends stream the body with no aggregation cap.
 
 **Stopping on Netty.** `stop()` is immediate for the socket: the listener and every open
 connection are cut at once, in-flight blocking handlers included. It then waits for the event-loop
 threads to exit, so a non-blocking handler that blocks the loop against its contract delays the
 return by its own duration. The other backends do not wait on handler code in `stop()`. A
-connection that closes while a request body is still arriving — a client abandoning an upload, or
-a refused request that asked to close — is not a server failure on Netty: it is logged at `DEBUG`,
-nothing is answered.
+connection that closes while a request body is still arriving — a client abandoning an upload —
+is not a server failure on Netty: it is logged at `DEBUG`, nothing is answered.
 
 **Idle connections on Netty.** Netty closes an idle connection after 30 s without writing
 anything, where idle means neither carrying a fully received request that awaits its response nor

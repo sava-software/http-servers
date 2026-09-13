@@ -7,6 +7,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.DefaultLastHttpContent;
+import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Ticker;
 import org.junit.jupiter.api.Test;
@@ -343,13 +345,13 @@ final class NettyPipelineTest {
   }
 
   /// The request's own `Connection: close` ends the connection after its response, whether
-  /// a handler answered it or the aggregator did: here the second request carries an
-  /// unsupported `Expect` and asks to close, so the aggregator's 417 is the final response —
-  /// written after the first request's, framed with the close, then the close. The
-  /// aggregator reports that close as premature (its bookkeeping still counts the refused
-  /// body as pending); that is not a server failure and must not be logged as one.
+  /// a handler answered it or the gate refused it: here the second request carries an
+  /// unsupported `Expect` and asks to close, so the 417 is the final response — written after
+  /// the first request's, framed with the close, then the close. Nothing behind it runs (the
+  /// body it sent regardless, read as a request line, included) and nothing is logged: no
+  /// party was left mid-request by that close.
   @Test
-  void theRequestsCloseIsHonouredOnAnAggregatorAnswer() {
+  void theRequestsCloseIsHonouredOnARefusal() {
     final var executor = new ManualExecutor();
     final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingGet("/c", OK);
     final var channel = pipeline(routes, executor);
@@ -366,8 +368,7 @@ final class NettyPipelineTest {
     assertTrue(wire.indexOf("connection: close", expectationFailed) > 0, "the 417 is framed with the requested close: " + wire);
     assertFalse(channel.isActive(), "the request asked to close");
     assertEquals(List.of("/a"), routes.ran, "the refused request never reaches a handler, and nothing follows a close");
-    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
-        "closing after a refusal is not a server failure: " + logs.stream().map(LogRecord::getMessage).toList());
+    assertTrue(logs.isEmpty(), "closing after a refusal leaves no one mid-request: " + logs.stream().map(LogRecord::getMessage).toList());
   }
 
   /// The handler-answered sibling: `Connection: close` on the request, a plain response.
@@ -480,6 +481,367 @@ final class NettyPipelineTest {
     assertTrue(logs.stream().anyMatch(r -> r.getLevel().equals(Level.FINE)
             && r.getThrown() instanceof io.netty.handler.codec.PrematureChannelClosureException),
         "the abort is still traceable at DEBUG: " + logs.stream().map(r -> r.getLevel() + " " + r.getMessage()).toList());
+  }
+
+  // ---- expectation refusals: decided where the codec stands, answered in turn ----
+
+  /// Control for the cases below: three pipelined requests, the third's body split across two
+  /// reads with the first request held by its blocking route in between — every response in
+  /// order, the third handler given the whole of its body.
+  @Test
+  void pipelinedBodiesSplitAcrossReadsAreAnsweredInOrder() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingPost("/c", ECHO);
+    final var channel = pipeline(routes, executor, 8);
+    channel.writeInbound(ascii(get("/a")
+        + "POST /b HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\nhi"
+        + "POST /c HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    executor.runNext();
+    channel.writeInbound(ascii("cd"));
+    final var wire = wire(channel);
+    assertEquals(3, count(wire, "http/1.1 200 ok"), wire);
+    assertTrue(wire.endsWith("abcd"), "the third handler saw its whole body: " + wire);
+    assertEquals(List.of("/a", "/b", "/c"), routes.ran);
+    assertTrue(channel.isActive());
+    channel.finishAndReleaseAll();
+  }
+
+  /// Refusing an expectation resets the codec (Netty's `HttpExpectationFailedEvent`: the
+  /// refused request's body is not expected, so what follows its head is read as the next
+  /// request line). That reset is right only while the codec still stands on the refused head;
+  /// delayed until the refusal's turn, it lands on whatever the codec has decoded since — here
+  /// the third request's body, whose tail then parses as a request line and is never answered.
+  /// So the refusal is decided the moment the head is decoded, and only its answer waits its
+  /// turn. The refused request here declares a body it never sends, which is what a client that
+  /// honours the refusal does.
+  @Test
+  void aRefusedExpectationLeavesTheNextRequestDecodable() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingPost("/c", ECHO);
+    final var channel = pipeline(routes, executor, 8);
+    channel.writeInbound(ascii(get("/a")
+        + "POST /b HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 2\r\n\r\n"
+        + "POST /c HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    assertTrue(wire(channel).isEmpty(), "the 417 waits behind the request in flight");
+    executor.runNext();
+    final var before = wire(channel);
+    assertTrue(before.startsWith("http/1.1 200 ok"), before);
+    final int refused = before.indexOf("http/1.1 417 expectation failed");
+    assertTrue(refused > 0, "the 417 follows the first response: " + before);
+    assertTrue(before.indexOf("content-length: 0", refused) > 0, "the 417 is framed: " + before);
+    assertFalse(before.contains("connection: close"), "a refused expectation does not end the connection: " + before);
+    assertTrue(channel.isActive());
+    assertTrue(channel.config().isAutoRead(), "the third request's body is still owed");
+
+    channel.writeInbound(ascii("cd"));
+    final var after = wire(channel);
+    assertTrue(after.startsWith("http/1.1 200 ok"), "the third request is answered once its body is in: " + after);
+    assertTrue(after.endsWith("abcd"), "with the whole of its body: " + after);
+    assertEquals(List.of("/a", "/c"), routes.ran, "the refused request never reaches a handler");
+    assertTrue(channel.isActive());
+    channel.finishAndReleaseAll();
+  }
+
+  /// A client that sends the body of a refused request anyway — the shape the defect was
+  /// found with — gets Netty's own outcome, bounded and in step: the refusal tells the codec
+  /// the body is not coming, so those bytes are read as the next request line (`hiPOST /c`,
+  /// a method nothing routes, answered 405 like any other) and no handler ever sees them; the
+  /// refusal is paired with its own request and nothing else, nothing hangs, and the
+  /// connection goes on serving requests after it.
+  @Test
+  void aBodySentAfterAnUnsupportedExpectationIsReadAsTheNextRequest() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingPost("/c", ECHO);
+    final var channel = pipeline(routes, executor, 8);
+    channel.writeInbound(ascii(get("/a")
+        + "POST /b HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 2\r\n\r\nhi"
+        + "POST /c HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab"));
+    assertTrue(wire(channel).isEmpty(), "the 417 waits behind the request in flight");
+    executor.runNext();
+    final var before = wire(channel);
+    assertTrue(before.startsWith("http/1.1 200 ok"), before);
+    final int refused = before.indexOf("http/1.1 417 expectation failed");
+    assertTrue(refused > 0, "the 417 follows the first response: " + before);
+    assertEquals(2, count(before, "http/1.1 "), "the two answered requests, and nothing else: " + before);
+    assertTrue(channel.isActive());
+
+    channel.writeInbound(ascii("cd"));
+    final var after = wire(channel);
+    assertTrue(after.startsWith("http/1.1 405 method not allowed"),
+        "the refused body is read as the next request line and answered as what it is: " + after);
+    assertEquals(List.of("/a"), routes.ran, "neither the refused request nor the line made of its body reaches a handler");
+    assertTrue(channel.isActive(), "the connection is in step and stays open");
+
+    channel.writeInbound(ascii(get("/a")));
+    executor.runNext();
+    assertTrue(wire(channel).startsWith("http/1.1 200 ok"), "the next request is served");
+    assertEquals(List.of("/a", "/a"), routes.ran);
+    channel.finishAndReleaseAll();
+  }
+
+  /// The oversized sibling: `Expect: 100-continue` announcing a body past the limit is refused
+  /// with 413 in its turn, framed with `Connection: close` and `Content-Length: 0` like the
+  /// aggregator's own oversized answer, and the connection is then closed without that body
+  /// ever being read — it was announced over the limit, and a 100-continue client may send it
+  /// without waiting, as this one did. Nothing behind the refusal runs, what was queued is
+  /// released with the pipeline, and nothing is logged.
+  @Test
+  void anOversizedContinueExpectationIsRefusedInOrderThenClosed() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingPost("/c", ECHO);
+    final var channel = pipeline(routes, executor, 8);
+    final var inbound = ascii(get("/a")
+        + "POST /b HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 9\r\n\r\n123456789"
+        + "POST /c HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nab");
+    channel.writeInbound(inbound);
+    assertTrue(wire(channel).isEmpty(), "the 413 waits behind the request in flight");
+    assertEquals(1, inbound.refCnt(), "the queued body chunk holds the inbound buffer");
+
+    final var logs = controllerLogs(executor::runNext);
+    final var wire = wire(channel);
+    assertTrue(wire.startsWith("http/1.1 200 ok"), wire);
+    final int refused = wire.indexOf("http/1.1 413 request entity too large");
+    assertTrue(refused > 0, "the 413 follows the first response: " + wire);
+    assertTrue(wire.indexOf("connection: close", refused) > 0, "the 413 ends the connection: " + wire);
+    assertTrue(wire.indexOf("content-length: 0", refused) > 0, "the 413 is framed: " + wire);
+    assertFalse(wire.contains("100 continue"), "an oversized body is never invited: " + wire);
+    assertFalse(channel.isActive(), "the connection is closed after the 413");
+    assertEquals(List.of("/a"), routes.ran, "neither the refused request nor anything behind it runs");
+    assertEquals(0, inbound.refCnt(), "the queued body is released with the pipeline");
+    assertTrue(logs.isEmpty(), "a refused expectation is not a server failure: " + logs.stream().map(LogRecord::getMessage).toList());
+  }
+
+  /// A refused request that is first on its connection is answered at once — nothing is in
+  /// flight to wait for — and the connection goes on: reads stay on, no handler runs, and the
+  /// refusal is activity like any answer, so the idle timeout runs afresh from it.
+  @Test
+  void aRefusedRequestFirstOnAConnectionIsAnsweredAtOnce() {
+    final var clock = new FakeClock();
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run, clock);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS / 3);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 2\r\n\r\n"));
+    final var wire = wire(channel);
+    assertTrue(wire.startsWith("http/1.1 417 expectation failed"), wire);
+    assertTrue(wire.contains("content-length: 0"), "the 417 is framed: " + wire);
+    assertFalse(wire.contains("connection:"), "a persistent HTTP/1.1 refusal needs no Connection header: " + wire);
+    assertTrue(channel.isActive(), "an unsupported expectation does not end the connection");
+    assertTrue(channel.config().isAutoRead(), "nothing is in flight once the refusal is out");
+    assertEquals(List.of(), routes.ran);
+    advance(channel, clock, IDLE_TIMEOUT_NANOS - 1);
+    assertTrue(channel.isActive(), "the refusal was activity: one tick short of a timeout after it the connection is open");
+    advance(channel, clock, 1);
+    assertFalse(channel.isActive(), "a full timeout after the refusal the connection is idle");
+  }
+
+  /// The oversized sibling, first on its connection: 413 with the close, at once.
+  @Test
+  void anOversizedContinueExpectationFirstOnAConnectionIsRefusedAndClosedAtOnce() {
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run, 8);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 9\r\n\r\n"));
+    final var wire = wire(channel);
+    assertTrue(wire.startsWith("http/1.1 413 request entity too large"), wire);
+    assertTrue(wire.contains("connection: close"), wire);
+    assertTrue(wire.contains("content-length: 0"), wire);
+    assertFalse(channel.isActive(), "the connection is closed after the 413");
+    assertEquals(List.of(), routes.ran);
+  }
+
+  /// A refused request between two routed ones, with no body to declare: the empty last
+  /// content the codec emits with its head is the gate's to drop, the 417 takes its turn, and
+  /// the request behind it is served on the same connection.
+  @Test
+  void aBodilessRefusedRequestIsAnsweredInOrderAndTheConnectionContinues() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingGet("/b", OK).nonBlockingGet("/c", OK);
+    final var channel = pipeline(routes, executor);
+    channel.writeInbound(ascii(get("/a") + "GET /b HTTP/1.1\r\nHost: h\r\nExpect: foo\r\n\r\n" + get("/c")));
+    assertTrue(wire(channel).isEmpty(), "the 417 waits behind the request in flight");
+    executor.runNext();
+    final var wire = wire(channel);
+    final int refused = wire.indexOf("http/1.1 417 expectation failed");
+    assertTrue(wire.startsWith("http/1.1 200 ok") && refused > 0 && wire.indexOf("http/1.1 200 ok", refused) > 0,
+        "200, 417, 200 in request order: " + wire);
+    assertEquals(3, count(wire, "http/1.1 "), wire);
+    assertEquals(List.of("/a", "/c"), routes.ran, "the refused request never reaches a handler");
+    assertTrue(channel.isActive());
+    assertTrue(channel.config().isAutoRead());
+    channel.finishAndReleaseAll();
+  }
+
+  /// Whatever the codec emits for a refused request after its head is the gate's to release,
+  /// not to queue or forward: a body part handed over at the codec's seam while the refusal
+  /// still waits its turn drops to zero references there and then. (The codec, told of the
+  /// refusal, decodes nothing more of that request; the gate's ownership does not rest on
+  /// that.) The refusal and the request behind it are then answered in order.
+  @Test
+  void theBodyPartsOfARefusedRequestAreReleased() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingGet("/c", OK);
+    final var channel = pipeline(routes, executor);
+    channel.writeInbound(ascii(get("/a") + "POST /b HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 2\r\n\r\n"));
+    final var part = new DefaultLastHttpContent(ascii("hi"));
+    channel.pipeline().context(HttpServerCodec.class).fireChannelRead(part);
+    assertEquals(0, part.refCnt(), "a body part of a refused request is released at once, not queued");
+    channel.writeInbound(ascii(get("/c")));
+    assertTrue(wire(channel).isEmpty(), "everything waits behind the request in flight");
+
+    executor.runNext();
+    final var wire = wire(channel);
+    final int refused = wire.indexOf("http/1.1 417 expectation failed");
+    assertTrue(wire.startsWith("http/1.1 200 ok") && refused > 0 && wire.indexOf("http/1.1 200 ok", refused) > 0,
+        "200, 417, 200 in request order: " + wire);
+    assertEquals(List.of("/a", "/c"), routes.ran);
+    assertTrue(channel.isActive());
+    channel.finishAndReleaseAll();
+  }
+
+  /// An `Expect` on an HTTP/1.0 request is ignored, never refused — RFC 9110 §10.1.1 has a
+  /// server ignore a 100-continue expectation there, and Netty's aggregator ignores any
+  /// expectation on that version — so the body is read and the request served, with no
+  /// interim response.
+  @Test
+  void anExpectationOnAnHttp10RequestIsIgnored() {
+    for (final String expect : List.of("foo", "100-continue")) {
+      final var routes = new Routes().nonBlockingPost("/p", ECHO);
+      final var channel = pipeline(routes, Runnable::run);
+      channel.writeInbound(ascii("POST /p HTTP/1.0\r\nExpect: " + expect + "\r\nContent-Length: 2\r\n\r\nhi"));
+      final var wire = wire(channel);
+      assertTrue(wire.startsWith("http/1.1 200 ok"), "Expect: " + expect + " on HTTP/1.0 is ignored: " + wire);
+      assertTrue(wire.endsWith("hi"), wire);
+      assertEquals(1, count(wire, "http/1.1 "), "no interim response either: " + wire);
+      assertEquals(List.of("/p"), routes.ran);
+      assertFalse(channel.isActive(), "HTTP/1.0 without keep-alive closes after the response");
+    }
+  }
+
+  /// The limit is inclusive: a body announced at exactly `maxContentLength` is invited with
+  /// `100 Continue` and served; one byte over is refused.
+  @Test
+  void aContinueExpectationAtTheLimitIsInvited() {
+    final var routes = new Routes().nonBlockingPost("/p", ECHO);
+    final var channel = pipeline(routes, Runnable::run, 8);
+    channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 8\r\n\r\n"));
+    final var interim = wire(channel);
+    assertTrue(interim.startsWith("http/1.1 100 continue"), "a body at the limit is invited: " + interim);
+    channel.writeInbound(ascii("12345678"));
+    final var response = wire(channel);
+    assertTrue(response.startsWith("http/1.1 200 ok"), response);
+    assertTrue(response.endsWith("12345678"), response);
+    assertEquals(List.of("/p"), routes.ran);
+    assertTrue(channel.isActive());
+    channel.finishAndReleaseAll();
+  }
+
+  /// A head the codec could not parse is the controller's 400 and a close, whatever
+  /// expectation it carried up to the failure: no 417 in place of the 400, and no 100 ahead of
+  /// it — Netty's aggregator would answer the expectation first (and, for a 417, leave the
+  /// request unanswered on an open connection). The gate's decoder-failure guard is also what
+  /// keeps a `Content-Length` the codec refused to normalise — a non-numeric value, one past
+  /// `long` — from being parsed by the gate at all (Netty guards that parse with a catch; the
+  /// gate with the guard's place in its rule), so an `Expect: 100-continue` beside such a length
+  /// is the same 400 and nothing is logged as a failure: a `NumberFormatException` out of
+  /// `channelRead` would be the controller's 500, closed and logged as the server's own.
+  @Test
+  void aMalformedHeadIsRefusedWith400WhateverItExpects() {
+    for (final String head : List.of(
+        "POST /p HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 2\r\nNoColon\r\n\r\n",
+        "POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 2\r\nNoColon\r\n\r\n",
+        "POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: abc\r\n\r\n",
+        "POST /p HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 99999999999999999999\r\n\r\n")) {
+      final var routes = new Routes().nonBlockingPost("/p", ECHO);
+      final var channel = pipeline(routes, Runnable::run);
+      final var logs = controllerLogs(() -> channel.writeInbound(ascii(head)));
+      final var wire = wire(channel);
+      assertTrue(wire.startsWith("http/1.1 400 bad request"), "a malformed head: " + head + " -> " + wire);
+      assertEquals(1, count(wire, "http/1.1 "), "the 400 is the whole answer: " + wire);
+      assertTrue(wire.contains("connection: close"), wire);
+      assertFalse(channel.isActive(), "a malformed request closes the connection");
+      assertEquals(List.of(), routes.ran);
+      assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+          "a malformed head is the client's failure, not the server's: " + logs.stream().map(LogRecord::getMessage).toList());
+    }
+  }
+
+  /// A malformed head that also declares a body over the limit is the aggregator's 413 and a
+  /// close — exactly as the same head is with no expectation at all: the gate leaves a
+  /// malformed head alone whatever it expects, and the aggregator tests the declared length
+  /// before it looks at the decoder result, so here, unlike the cases above, the controller's
+  /// 400 is never reached. What the contract promises is that the answer is independent of
+  /// the `Expect`, and it is.
+  @Test
+  void aMalformedHeadAnnouncingAnOversizedBodyIsRefusedWith413WhateverItExpects() {
+    for (final String expect : List.of("", "Expect: foo\r\n", "Expect: 100-continue\r\n")) {
+      final var routes = new Routes().nonBlockingPost("/p", ECHO);
+      final var channel = pipeline(routes, Runnable::run, 8);
+      final var logs = controllerLogs(() ->
+          channel.writeInbound(ascii("POST /p HTTP/1.1\r\nHost: h\r\n" + expect + "Content-Length: 99\r\nNoColon\r\n\r\n")));
+      final var wire = wire(channel);
+      assertTrue(wire.startsWith("http/1.1 413 request entity too large"), "\"" + expect.strip() + "\" on a malformed, oversized head: " + wire);
+      assertEquals(1, count(wire, "http/1.1 "), "no 100 ahead of the 413 and no 417 in its place: " + wire);
+      assertTrue(wire.contains("content-length: 0"), "the 413 is framed: " + wire);
+      assertTrue(wire.contains("connection: close"), "the 413 ends the connection: " + wire);
+      assertFalse(channel.isActive(), "the connection is closed after a 413");
+      assertEquals(List.of(), routes.ran);
+      assertTrue(logs.isEmpty(), "a refused body is not a server failure: " + logs.stream().map(LogRecord::getMessage).toList());
+    }
+  }
+
+  /// A request line the codec cannot parse at all is the controller's 400 and a close as well
+  /// — and a *signalled* one: RFC 9112 §9.6 has a server put `Connection: close` on the final
+  /// response of a connection it is about to end, and this is the one shape in which nothing
+  /// about the request says which version it spoke. The codec's stand-in for such a request
+  /// is an invented `HTTP/1.0` head; framed for that version the close would be implicit —
+  /// the header removed, a keep-alive-shaped 400 and then a bare FIN — so the gate frames a
+  /// head the codec could not parse as HTTP/1.1, which every response here is anyway. The
+  /// request pipelined behind the garbage is discarded by the codec with the rest of the
+  /// stream, so that header is the only word the client gets that it must send it again.
+  @Test
+  void anUnparsableRequestLineIsRefusedWith400AndAnExplicitClose() {
+    final var routes = new Routes().nonBlockingGet("/c", OK);
+    final var channel = pipeline(routes, Runnable::run);
+    final var logs = controllerLogs(() -> channel.writeInbound(ascii("nonsense\r\n\r\n" + get("/c"))));
+    final var wire = wire(channel);
+    assertTrue(wire.startsWith("http/1.1 400 bad request"), wire);
+    assertEquals(1, count(wire, "http/1.1 "), "the request behind the garbage is never answered: " + wire);
+    assertTrue(wire.contains("connection: close"), "the close is signalled on the 400, not implied by the codec's invented version: " + wire);
+    assertFalse(channel.isActive(), "an unparsable request line closes the connection");
+    assertEquals(List.of(), routes.ran);
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+        "an unparsable request is the client's failure, not the server's: " + logs.stream().map(LogRecord::getMessage).toList());
+  }
+
+  /// The same outcome reached through the refusal contract itself: a client that sends the
+  /// body of a refused request anyway has those bytes read as its next request line, and when
+  /// that line is unparsable the answer is the 400 and a signalled close — in turn: 200, 417
+  /// (no close: the refused request did not ask for one), then the 400 with
+  /// `Connection: close`, and the request pipelined behind the garbage is never answered.
+  @Test
+  void anUnparsableLineMadeOfARefusedBodyIsAnsweredAndClosed() {
+    final var executor = new ManualExecutor();
+    final var routes = new Routes().blockingGet("/a", OK).nonBlockingPost("/b", ECHO).nonBlockingGet("/c", OK);
+    final var channel = pipeline(routes, executor);
+    channel.writeInbound(ascii(get("/a")
+        + "POST /b HTTP/1.1\r\nHost: h\r\nExpect: foo\r\nContent-Length: 10\r\n\r\n"
+        + "nonsense\r\n"
+        + get("/c")));
+    assertTrue(wire(channel).isEmpty(), "everything waits behind the request in flight");
+
+    final var logs = controllerLogs(executor::runNext);
+    final var wire = wire(channel);
+    assertTrue(wire.startsWith("http/1.1 200 ok"), wire);
+    final int refused = wire.indexOf("http/1.1 417 expectation failed");
+    assertTrue(refused > 0, "the 417 follows the first response: " + wire);
+    final int badRequest = wire.indexOf("http/1.1 400 bad request", refused);
+    assertTrue(badRequest > 0, "the line made of the refused body is answered after the 417: " + wire);
+    assertEquals(3, count(wire, "http/1.1 "), "the request behind the garbage is never answered: " + wire);
+    assertFalse(wire.substring(0, badRequest).contains("connection: close"), "neither earlier response ends the connection: " + wire);
+    assertTrue(wire.indexOf("connection: close", badRequest) > 0, "the close is signalled on the 400: " + wire);
+    assertFalse(channel.isActive(), "an unparsable request line closes the connection");
+    assertEquals(List.of("/a"), routes.ran, "neither the refused request nor the line made of its body reaches a handler");
+    assertTrue(logs.stream().noneMatch(r -> r.getLevel().intValue() >= Level.SEVERE.intValue()),
+        "an unparsable request is the client's failure, not the server's: " + logs.stream().map(LogRecord::getMessage).toList());
   }
 
   // ---- the idle timeout, on a clock the test advances ----

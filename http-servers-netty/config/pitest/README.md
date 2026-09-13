@@ -34,14 +34,38 @@ normalised ticker — the gate's clock, so the two agree in differences and disa
 absolute readings, which is what makes a deadline computed from an absolute reading, or
 an accept time mutated to zero, observable).
 
+After the expectation-refusal fix (2026-09-13, after the idle-timeout review: the
+delayed-reset defect under "Killed by pinning", its reproductions and the tests that pin
+the refusal contract) and the review of that fix the same day (the framing of a head the
+codec could not parse, below, and the tests that pin the malformed-head and
+unparsable-line shapes and the refusal over sockets) the population is **180 mutants, 180
+killed, 0 `SURVIVED`, 0 `TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed
+history-free on the final code (`pitestDispatch -PnoMutationHistory`, PIT's mutation phase
+8 s of a 9 s run, 906 test executions, 5.03 per mutant) under a 1-minute load average of
+23.2 at launch and 31.1 when it finished, `pitestDispatchVerify` 180/180,
+`mutationOwnershipAudit` 13 classes owned — the gate's `Refusal` record is the thirteenth.
+Line coverage of the mutated classes is 283/285, the two uncovered lines still
+`ResponseUtil`'s private constructor. Over the 144-mutant idle-timeout population that is
++36: from the refusal fix, the gate's `admit` (7), `refusal` (11) and `answer` (5),
+`channelRead`'s head dispatch (2) and its discard guard (2), `forward`'s `Refusal` branch
+(3) and its extracted `begin` call (1), and the decoder-failure guard of
+`NettyRequestAggregator.newContinueResponse` (3) — 34 — and from its review the
+decoder-failure conditional in `begin` (2) that frames an unparsable head as HTTP/1.1.
+`ResponseUtil.emptyResponse`'s two mutants add nothing to the total: they replaced the two
+inline `setContentLength` sites (the aggregator's `413` and the pre-flight `200`) it
+absorbed. Every one is killed by a named test below. The fix's own observation, before the
+review, read 178/178 (mutation phase 8 s of 10 s, 868 executions, 4.88 per mutant) under
+load averages of 35.7 at launch and 34.2 a minute after. There is still no
+`dispatch-accepted.csv`. Keep it that way.
+
 After the idle-timeout review (2026-09-13: the stalled-body fix, the knob validation and
-the tests below) the population is **144 mutants, 144 killed, 0 `SURVIVED`, 0
-`TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed history-free on the final code
+the tests below) the population was **144 mutants, 144 killed, 0 `SURVIVED`, 0
+`TIMED_OUT`, 0 `NO_COVERAGE`, 0 `RUN_ERROR`**, observed history-free on that code
 (`pitestDispatch -PnoMutationHistory`, PIT's mutation phase 10 s, 648 test executions,
 4.5 per mutant) under a 1-minute load average of 29 at the start and 39 at the end,
 `pitestDispatchVerify` 144/144, `mutationOwnershipAudit` 12 classes owned. The two
-mutants added are `NettyServerBuilder.<init>`'s `RemoveConditional` pair on the
-idle-timeout validation, both killed (below). Line coverage of the mutated classes is
+mutants added were `NettyServerBuilder.<init>`'s `RemoveConditional` pair on the
+idle-timeout validation, both killed (below). Line coverage of the mutated classes was
 242/244. (The idle timeout's first observation, the same day and before the review, read
 142/142 under a load average of 5.75, `pitestDispatchVerify` green.) The attempt before that, on
 the same code under a load average of 8.92, produced the identical 142-mutant
@@ -49,8 +73,7 @@ population with 141 killed and one `RUN_ERROR` — a minion death at
 `NettyRequestAggregator.handleOversizedMessage` / `VoidMethodCallMutator`, PIT's only
 diagnosis the generic "did not start or died during analysis", no resource failure
 named — which the verifier refused as invalid evidence; nothing was tuned, and the
-clean run is its closure, not its diagnosis. The two uncovered lines are still
-`ResponseUtil`'s private constructor. There is still no `dispatch-accepted.csv`. Keep it that way. (History: the first
+clean run is its closure, not its diagnosis. (History: the first
 seed was 106/105/1, the review-application pass 110/109/1, and the 2026-09-12 gate
 rework 132/132/0, observed history-free three times — `pitestDispatch
 -PnoMutationHistory` twice, then `pitestDispatchBaselinePrune`'s own write-boundary
@@ -140,6 +163,30 @@ previews with the identical single-row candidate multiset, then
 
 ### Refactored out (no rows)
 
+- `NettyRequestGate.refusal` — Netty's `HttpUtil.isUnsupportedExpectation` is
+  package-private, so the gate restates the aggregator's rule itself: one compound guard
+  (`no Expect || decoder failure || version below HTTP/1.1` → not refused), then
+  "not `100-continue`" → 417, then `Content-Length > maxContentLength` → 413. Each guard
+  and each comparison has its own killer rather than an equivalence argument: the missing
+  `Expect` by every routed request (a null `contentEqualsIgnoreCase` reads as a refusal), the
+  decoder failure by `aMalformedHeadIsRefusedWith400WhateverItExpects`, the version by
+  `anExpectationOnAnHttp10RequestIsIgnored` (both the `<` boundary and the always-refuse
+  direction), the length by `aContinueExpectationAtTheLimitIsInvited` (the `>` boundary: a
+  body at the limit is invited) against the 413 cases.
+- `NettyRequestAggregator.newContinueResponse` — no "defensive" throw for a head the gate
+  should have refused: the gate refuses first, so such a block could only ever read
+  `NO_COVERAGE`, which the doctrine forbids accepting. The override's one branch is the
+  decoder-failure guard, both directions killed (never-null by
+  `aMalformedHeadIsRefusedWith400WhateverItExpects` — a `100` ahead of the `400`;
+  always-null by `anInterimResponseCompletesNothing` and `aContinueExpectationAtTheLimitIsInvited`);
+  that the gate refuses first is what the class comment records, and the reproduction
+  tests would fail if it stopped (the aggregator's own 417 would fire the reset late again).
+- `ResponseUtil.emptyResponse` — the framed bodiless response (`Content-Length: 0`, RFC
+  9112 §6.3) was built inline by the aggregator's `413` and the controller's pre-flight
+  `200`, and would have been a third time by the gate's refusals; it is one site now, whose
+  `VoidMethodCallMutator` on `setContentLength` is killed by
+  `corsPreflightIsContentLengthDelimited`, `anOversizedRequestIsRefusedInOrderThenClosed`
+  and the refusal cases' `content-length: 0` assertions alike.
 - `NettyRequestGate.checkIdle` / `scheduleIdleCheck` — the idle check re-arms itself
   for the time still to run (`remaining = timeout - (now - lastActivity)`), closing
   when `remaining <= 0`. The `ConditionalsBoundaryMutator` on that comparison (`< 0`)
@@ -208,6 +255,89 @@ previews with the identical single-row candidate multiset, then
 
 ### Killed by pinning rather than accepted
 
+- The expectation refusal (2026-09-13, the P2 review finding). Oracle: RFC 9110 §10.1.1
+  and Netty's own `HttpObjectAggregator` contract — an unsupported `Expect` is 417, an
+  `Expect: 100-continue` announcing a body over `maxContentLength` is 413, an `Expect` on
+  HTTP/1.0 is ignored — plus RFC 9112 §9.3.2 for the ordering. The defect: refusing fires
+  `HttpExpectationFailedEvent`, on which `HttpObjectDecoder.userEventTriggered` resets a
+  decoder that is mid-body (`READ_FIXED_LENGTH_CONTENT`, `READ_VARIABLE_LENGTH_CONTENT`,
+  `READ_CHUNK_SIZE`); behind the gate the aggregator's refusal reached the codec at the
+  refused request's *turn*, when the codec could be mid-body of a later request, whose
+  tail was then parsed as a request line and never answered (the review's `EmbeddedChannel`
+  differential: three pipelined requests, the second refused, the third's body split across
+  reads; the same input without `Expect` served all three). The gate now decides the
+  refusal in `channelRead`, where the codec still stands on the head, fires the event
+  there and answers in turn. Pinned in process by
+  `aRefusedExpectationLeavesTheNextRequestDecodable` (the reproduction — 200, 417, 200
+  with the whole body — which failed against the old code with an empty wire after the
+  tail; it also kills the `NakedReceiverMutator` on `admit`'s `fireUserEventTriggered`,
+  since without the reset the codec reads the next request's first bytes as the refused
+  body), `aBodySentAfterAnUnsupportedExpectationIsReadAsTheNextRequest` (the review's
+  exact shape, body on the wire: Netty's own outcome — those bytes read as a request line
+  and answered 405, no handler run, the connection in step for the next request),
+  `anOversizedContinueExpectationIsRefusedInOrderThenClosed` (413 in turn with
+  `Connection: close` and `Content-Length: 0`, no `100`, then closed, the queue released,
+  nothing logged), `aRefusedRequestFirstOnAConnectionIsAnsweredAtOnce` (417 with nothing
+  in flight, reads on, no `Connection` header, and the refusal is idle activity: open one
+  tick short of a timeout after it, closed at it — with the 413 cases this kills both
+  directions of `answer`'s close conditional and the `NakedReceiver` on its `closeAfter`),
+  `anOversizedContinueExpectationFirstOnAConnectionIsRefusedAndClosedAtOnce`,
+  `aBodilessRefusedRequestIsAnsweredInOrderAndTheConnectionContinues` (the codec's
+  `EMPTY_LAST_CONTENT` dropped; 200, 417, 200),
+  `theBodyPartsOfARefusedRequestAreReleased` (a `DefaultLastHttpContent` handed over at
+  the codec's seam while the refusal is still queued reads `refCnt` 0 at once: the
+  never-discard direction of `channelRead`'s guard is a defensive ownership invariant, not
+  a wire property — in production the only thing the codec can emit for a refused head is
+  its `EMPTY_LAST_CONTENT` singleton, whose release is a no-op and which the aggregator
+  would drop unseen with nothing in aggregation, so the synthetic part at the codec's
+  context is the deliberate seam, and a Netty upgrade should re-check that reachability
+  claim), `theRequestsCloseIsHonouredOnARefusal` (the request's close framed on the 417,
+  nothing logged), `anExpectationOnAnHttp10RequestIsIgnored`,
+  `aContinueExpectationAtTheLimitIsInvited`, `aMalformedHeadIsRefusedWith400WhateverItExpects`
+  (the gate's decoder-failure guard, a 417 in place of the 400; the aggregator's, a 100
+  ahead of it; and — no mutant, but the guard's *place* in the rule — a `Content-Length`
+  the codec refused to normalise, `abc` and a value past `long`, beside
+  `Expect: 100-continue`: still the 400 and nothing logged, where a gate that parsed that
+  length before the guard would throw `NumberFormatException` out of `channelRead`, the
+  controller's 500 and an `ERROR` record) and
+  `aMalformedHeadAnnouncingAnOversizedBodyIsRefusedWith413WhateverItExpects` (the same
+  malformed head over the limit is the aggregator's 413 and close with no `Expect`, `foo`
+  and `100-continue` alike — what the contract promises is independence from the `Expect`,
+  not the 400 in every case); and over sockets by `pipelinedExpectationFailureKeepsRequestOrder`,
+  `pipelinedOversizedRequestKeepsRequestOrder`, `expectContinueIsAnsweredBeforeTheBodyIsSent`
+  and, since the review of the fix, `aRefusedExpectationLeavesThePipelinedRequestBehindItDecodable`
+  (the reproduction shape end to end: a refusal with no close behind a blocking route and a
+  third request whose body is written in two halves — 200, 417 with `Content-Length: 0`
+  and no `Connection` header, 200 with the whole body — the shape the in-process
+  reproduction was observed to hang on, which over a socket would fail on the 2 s read
+  bound; not itself observed against the old design) and `anOversizedContinueExpectationIsRefusedAndClosed`
+  (the deliberate divergence from Netty's continue-path 413, which carries no `Connection`
+  header and keeps the connection: 413, `Content-Length: 0`, `Connection: close`, EOF).
+  `forward`'s `Refusal` branch removed sends the marker down the pipeline, where nothing
+  accepts it and the request is never answered — every 417 case; `answer`'s `write` and
+  `flush` dropped leave the wire empty in process and the socket case on its 2 s bound.
+- The framing of a head the codec could not parse (2026-09-13, the review of the refusal
+  fix). Oracle: RFC 9112 §9.6 — a server about to close sends `Connection: close` on its
+  final response. The defect predates the refusal fix but that fix made it a routine
+  outcome of a documented contract (a refused body sent anyway is read as a request line,
+  and an unparsable one is the 400 and a close): for a request line that never parsed the
+  codec's stand-in is an invented `HTTP/1.0` head (`HttpRequestDecoder.createInvalidMessage`),
+  `begin` took that as the request's version, and `HttpUtil.setKeepAlive` framed for
+  HTTP/1.0 *removes* the `Connection: close` the controller's 400 carries — a
+  keep-alive-shaped 400 and then a bare FIN, every request pipelined behind the garbage
+  discarded by the codec unsignalled. A head whose failure is in the header block keeps its
+  real HTTP/1.1 and was never affected, which is why `aMalformedHeadIsRefusedWith400WhateverItExpects`
+  and the socket suite's `malformedRequestsAreRefusedAndClosed` (both `NoColon`) were green
+  over it. `begin` now frames a decoder-failed head as HTTP/1.1 — what every response here
+  is anyway — while a genuinely parsed `HTTP/1.0` request keeps its implicit close. Both
+  directions of that conditional (`RemoveConditional` on `begin`): the real-version
+  direction by `anUnparsableRequestLineIsRefusedWith400AndAnExplicitClose` (`nonsense`,
+  then a request behind it: one 400 with `connection: close`, closed, nothing logged —
+  which failed against the fix before the review, the header absent) and
+  `anUnparsableLineMadeOfARefusedBodyIsAnsweredAndClosed` (the same shape reached through
+  the refusal contract: 200, 417 without a close, 400 with it, the request behind the
+  garbage never answered); the always-HTTP/1.1 direction by `http10PersistsOnlyOnRequest`
+  (an HTTP/1.0 close stays implicit, an HTTP/1.0 keep-alive stays acknowledged).
 - The idle timeout (2026-09-13). The oracle is split, because the two reference
   backends do not agree past the first case. *A silent connection between requests is
   closed after 30 s*: both — the JDK backend's `idleInterval`
@@ -277,12 +407,13 @@ previews with the identical single-row candidate multiset, then
   `theNextRequestWaitsForTheFinalResponse` (one release per completion, reads paused
   exactly while a received request waits), `anInterimResponseCompletesNothing` (a
   `100` neither completes nor closes, even on a request that asked to close),
-  `aBodyStillArrivingIsReadOn`, `theRequestsCloseIsHonouredOnAnAggregatorAnswer` (the
-  417 waits its turn and honours the request's close) and
+  `aBodyStillArrivingIsReadOn`, `theRequestsCloseIsHonouredOnARefusal` (the 417 waits
+  its turn and honours the request's close) and
   `anOversizedRequestIsRefusedInOrderThenClosed`.
 - Persistence from both sides (§9.6), the 2026-09-12 P2 fix: `keepAlive =
   request keep-alive && !response Connection: close`, framed by `HttpUtil.setKeepAlive`
-  in `NettyRequestGate.write` and closed after the write. The handler's close by
+  in `NettyRequestGate.write` (for the request's version, or HTTP/1.1 for a head the codec
+  could not parse — above) and closed after the write. The handler's close by
   `handlerConnectionCloseIsHonoured` and `aClosingResponseEndsTheConnectionAndReleasesTheQueue`
   (in any case, and nothing behind it runs); the request's close by
   `connectionCloseIsHonoured` and `theRequestsCloseIsHonouredOnAHandlerAnswer`; the
@@ -295,9 +426,10 @@ previews with the identical single-row candidate multiset, then
   `Connection: close`, then the close, independent of the channel's `autoRead` at
   that instant: `pipelinedOversizedRequestKeepsRequestOrder` (framing and EOF on a
   socket), `anOversizedRequestIsRefusedInOrderThenClosed` and
-  `oversizedBodiesAreRefusedWith413`.
+  `oversizedBodiesAreRefusedWith413`. The `Expect: 100-continue` refusal is no longer
+  its sibling here: the gate's `413` (above) carries the same headers and close.
 - `ResponseUtil.closeAfter`'s `Connection: close` (one site shared by the malformed
-  400, the `exceptionCaught` 500 and the 413): `malformedRequestsAreRefusedAndClosed`,
+  400, the `exceptionCaught` 500 and both 413s): `malformedRequestsAreRefusedAndClosed`,
   `errorEscapingANonBlockingHandlerIsAnsweredAndLogged` and the 413 cases above all
   read to EOF.
 - `NettyController.exceptionCaught`'s client-abort branch (a
@@ -307,7 +439,8 @@ previews with the identical single-row candidate multiset, then
   throwable, an empty wire) against `errorEscapingANonBlockingHandlerIsAnsweredAndLogged`
   (a real `Error` still answered 500 and logged at `ERROR`).
 - `Expect: 100-continue` before the body (RFC 9110 §10.1.1): `expectContinueIsAnsweredBeforeTheBodyIsSent`
-  sends nothing past the head until the `100` has arrived.
+  sends nothing past the head until the `100` has arrived; in process,
+  `anInterimResponseCompletesNothing` and `aContinueExpectationAtTheLimitIsInvited`.
 - The `Access-Control-Allow-Headers` null guard on the pre-flight path — Netty's
   header map refuses the null the other backends treat as a no-op — is pinned by
   `corsPreflightWithoutRequestHeadersAnswers`.
@@ -328,7 +461,9 @@ previews with the identical single-row candidate multiset, then
   `secondStartThrowsAndTheRunningServerIsUndisturbed`.
 - The reply version (`ResponseUtil` frames every response as `HTTP/1.1` whatever
   version the request named): `http10RequestIsAnsweredThenClosed` pins `HTTP/1.1 200`
-  for an `HTTP/1.0` request.
+  for an `HTTP/1.0` request, and `anUnparsableRequestLineIsRefusedWith400AndAnExplicitClose`
+  that the codec's invented `HTTP/1.0` for an unparsable line decides neither the reply
+  version nor, since the review above, its `Connection` framing.
 
 ### Seed provenance
 
@@ -348,7 +483,7 @@ before the first `hardeningCertify`.
 ### Slow-covering-test advisory
 
 Since the idle timeout the suite's slowest covering test is
-`anIdleConnectionIsClosedAfterTheIdleTimeout` — 206 ms in both 2026-09-13 history-free
+`anIdleConnectionIsClosedAfterTheIdleTimeout` — 206 ms in all three 2026-09-13 history-free
 runs, against the plugin's 250 ms threshold, and real wall-clock time by construction (a
 200 ms knob waited out for an EOF), not work. No coverage-phase advisory fired in
 either run, but that case is the first thing to look at if this suite ever shows a
@@ -376,7 +511,8 @@ was observed: a re-arm for zero delay under the frozen test clock is an infinite
 inside `EmbeddedEventLoop.runScheduledTasks`, which no fixture bound reaches; the
 one-nanosecond floor in `NettyRequestGate.scheduleIdleCheck` ("Refactored out", above)
 makes the boundary mutant fail by assertion instead. Both history-free runs on the
-final code (142 mutants before the review, 144 after it) read zero `TIMED_OUT`. Any future `TIMED_OUT` in this suite is, by
+idle-timeout code (142 mutants before the review, 144 after it), the
+expectation-refusal run (178) and its review-application run (180) read zero `TIMED_OUT`. Any future `TIMED_OUT` in this suite is, by
 construction, a covering test that exceeded its bound *and* PIT's margin, a head-only
 response an `HttpClient` case was left to wait on, or a scheduled task re-armed for
 the instant it runs in: a `SURVIVED`↔`TIMED_OUT` flip of a row that should already be

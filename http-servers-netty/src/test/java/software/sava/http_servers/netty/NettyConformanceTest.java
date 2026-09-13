@@ -1229,9 +1229,9 @@ final class NettyConformanceTest {
 
   // ---- ordering and persistence are decided per connection, whoever writes the response ----
 
-  /// A pipelined request the aggregator answers on its own — here an unsupported `Expect`,
-  /// answered 417 before any handler runs — must still wait its turn behind the request in
-  /// flight: HTTP/1.1 pipelining requires responses in request order whoever writes them
+  /// A pipelined request the gate refuses on its own — here an unsupported `Expect`, answered
+  /// 417 before any handler runs — must still wait its turn behind the request in flight:
+  /// HTTP/1.1 pipelining requires responses in request order whoever writes them
   /// (RFC 9112 §9.3.2), or the client pairs the 417 with the GET. Same shape as
   /// `pipelinedResponsesArriveInRequestOrder`: one I/O thread and a probe on a second
   /// connection guarantee the loop has read both requests before the first handler is
@@ -1319,6 +1319,98 @@ final class NettyConformanceTest {
       assertClosed(in);
     } finally {
       release.countDown();
+    }
+  }
+
+  /// The defect the gate's own refusal exists for, over a socket. Refusing an expectation
+  /// resets the codec (Netty's `HttpExpectationFailedEvent`: the refused body is not coming),
+  /// and that reset is right only while the codec still stands on the refused head. Here the
+  /// refused request asks for nothing (no `Connection: close`, no body — it honours the
+  /// refusal) and a third request is pipelined behind it with half of its body, the rest
+  /// written only once the 417 has been read: a refusal delayed to its turn would find the
+  /// codec mid-body of that third request, reset it there, and the tail would be parsed as a
+  /// request line — the third request never answered, this test failing on its 2 s read
+  /// bound. Same one-I/O-thread-plus-probe shape as `pipelinedResponsesArriveInRequestOrder`,
+  /// so the loop has read everything before the first handler is released. The refusal's
+  /// framing is pinned too: `Content-Length: 0` and no `Connection` header, since a 417 does
+  /// not end a persistent connection. Pinned in process by
+  /// `NettyPipelineTest.aRefusedExpectationLeavesTheNextRequestDecodable`.
+  @Test
+  void aRefusedExpectationLeavesThePipelinedRequestBehindItDecodable() throws Exception {
+    final var release = new java.util.concurrent.CountDownLatch(1);
+    final var builder = new NettyServerBuilder(NettyServerBuilder.DEFAULT_MAX_CONTENT_LENGTH, 1, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
+    builder.blockingQueryHandler("/slow", request -> {
+      await(release);
+      return HttpResponse.response("text/plain", "slow");
+    });
+    builder.nonBlockingQueryPost("/p", request -> HttpResponse.response("text/plain", "posted"));
+    builder.nonBlockingQueryPost("/echo", request ->
+        HttpResponse.response("text/plain", new String(request.body(), StandardCharsets.UTF_8)));
+    builder.nonBlockingQueryHandler("/probe", request -> HttpResponse.response("text/plain", "probe"));
+    final int port = start(builder);
+
+    try (final var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(2_000);
+      final var out = socket.getOutputStream();
+      out.write(("GET /slow HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+          + "POST /p HTTP/1.1\r\nHost: 127.0.0.1\r\nExpect: foo\r\nContent-Length: 2\r\n\r\n"
+          + "POST /echo HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 4\r\nConnection: close\r\n\r\nab")
+          .getBytes(StandardCharsets.US_ASCII));
+      out.flush();
+
+      final var probe = rawGet(port, "/probe");
+      assertEquals(200, rawStatus(probe), probe);
+      release.countDown();
+
+      final var in = socket.getInputStream();
+      final var first = readResponse(in);
+      assertEquals(200, rawStatus(first), "the in-flight request's response must come first: " + first);
+      assertEquals("slow", rawBody(first), first);
+      final var second = readResponse(in);
+      assertEquals(417, rawStatus(second), "the unsupported expectation is answered after it: " + second);
+      assertEquals("0", rawHeader(second, "Content-Length"), "the 417 is framed (RFC 9112 §6.3): " + second);
+      assertNull(rawHeader(second, "Connection"), "a refused expectation does not end a persistent connection: " + second);
+
+      out.write("cd".getBytes(StandardCharsets.US_ASCII));
+      out.flush();
+      final var third = readResponse(in);
+      assertEquals(200, rawStatus(third), "the request behind the refusal is answered once its body is in: " + third);
+      assertEquals("abcd", rawBody(third), "with the whole of its body: " + third);
+      assertClosed(in);
+    } finally {
+      release.countDown();
+    }
+  }
+
+  /// The oversized sibling of the refusal, over a socket: an `Expect: 100-continue` announcing
+  /// a body past the aggregation limit is answered 413 with `Content-Length: 0` and
+  /// `Connection: close`, and the connection is then closed — before any of the body is sent.
+  /// This is the one place this backend answers differently from Netty's own aggregator,
+  /// whose continue-path 413 carries no `Connection` header and keeps the connection: here
+  /// there is one 413, and it closes (documented on `NettyController`). The client sends
+  /// nothing past the head, as a 100-continue client that honours the answer does. Pinned in
+  /// process by `NettyPipelineTest.anOversizedContinueExpectationIsRefusedInOrderThenClosed`.
+  @Test
+  void anOversizedContinueExpectationIsRefusedAndClosed() throws Exception {
+    final var builder = new NettyServerBuilder(256, NettyServerBuilder.DEFAULT_IO_THREADS, NettyServerBuilder.DEFAULT_IDLE_TIMEOUT);
+    builder.nonBlockingQueryPost("/big", request ->
+        HttpResponse.response("application/octet-stream", request.body()));
+    final int port = start(builder);
+
+    try (final var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.setSoTimeout(2_000);
+      final var out = socket.getOutputStream();
+      out.write("POST /big HTTP/1.1\r\nHost: 127.0.0.1\r\nExpect: 100-continue\r\nContent-Length: 512\r\n\r\n"
+          .getBytes(StandardCharsets.US_ASCII));
+      out.flush();
+
+      final var in = socket.getInputStream();
+      final var response = readResponse(in);
+      assertEquals(413, rawStatus(response), "an oversized body is refused, never invited: " + response);
+      assertEquals("0", rawHeader(response, "Content-Length"),
+          "the 413 is framed so it can be delimited before the close (RFC 9112 §6.3): " + response);
+      assertTrue("close".equalsIgnoreCase(rawHeader(response, "Connection")), "the 413 ends the connection: " + response);
+      assertClosed(in);
     }
   }
 
