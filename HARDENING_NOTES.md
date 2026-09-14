@@ -53,8 +53,14 @@ edges the ratchet cannot see.
   history-free, identical under `-PisolateMutants`, and `KILLED` for both
   siblings under full certification), and its underlying cause — a leaked
   acceptor the test could not reclaim — was then **fixed in production** rather
-  than relabelled; see the API note below. Jdk 79's finite reading is still only
-  conjectured and is owed a scoped history-free solo measurement.
+  than relabelled; see the API note below. Jdk 79 went the same way on
+  2026-09-14: the connection-hygiene rework of the jdk adapter (a soak-bisected
+  leak — jdk.httpserver never unregistered a connection whose exchange failed
+  after `handle()` returned or inside `HttpExchange.close()`) removed the
+  executor hop that made the verdict order-dependent, the `os.write` sibling now
+  reads `KILLED` in every history-free observation (two scoped, two full), and
+  the `process` member was retired with its method; the jdk suite's
+  `config/pitest/README.md` carries the argument.
 - **`HttpServer` gained `stop()` on 2026-08-07, and that was a product fix, not
   a records fix.** The interface had exactly one method, `start()`, and no
   production code anywhere could shut a server down: consumers could not release

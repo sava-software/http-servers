@@ -11,21 +11,24 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 import static java.lang.System.Logger.Level.ERROR;
 
 public class JdkServerBuilder extends BaseHttpServerBuilder<HttpHandler, HttpServer> {
 
-  private final Executor taskExecutor;
-
-  protected JdkServerBuilder(final Executor taskExecutor) {
-    this.taskExecutor = taskExecutor;
+  protected JdkServerBuilder() {
   }
 
-
-  protected JdkServerBuilder() {
-    this(Executors.newVirtualThreadPerTaskExecutor());
+  /// @deprecated the task executor is not used any more and the argument is ignored:
+  /// non-blocking handlers run on the `Executor` handed to [#createServer], like blocking
+  /// ones, because jdk.httpserver can only clean up a failed exchange on the thread it
+  /// dispatched it to (see [JdkController]). Kept for one release so a class-path subclass
+  /// calling it still compiles — the only kind there can be: this module exports no package,
+  /// so on the module path the builder is reachable only through
+  /// [JDKHttpServerBuilderFactory], which never called it.
+  @Deprecated(forRemoval = true)
+  protected JdkServerBuilder(final Executor taskExecutor) {
+    this();
   }
 
   @Override
@@ -57,22 +60,22 @@ public class JdkServerBuilder extends BaseHttpServerBuilder<HttpHandler, HttpSer
 
   @Override
   protected HttpHandler nonBlockingGet(final QueryHandler nonBlockingGetHandler) {
-    return JdkQueryHandler.createNonBlockingGetHandler(taskExecutor, nonBlockingGetHandler);
+    return new JdkQueryHandler(nonBlockingGetHandler);
   }
 
   @Override
   protected HttpHandler blockingGet(final QueryHandler blockingGetHandler) {
-    return JdkQueryHandler.createBlockingGetHandler(blockingGetHandler);
+    return new JdkQueryHandler(blockingGetHandler);
   }
 
   @Override
   protected HttpHandler nonBlockingPost(final QueryHandler nonBlockingPostHandler) {
-    return JdkQueryHandler.createNonBlockingPostHandler(taskExecutor, nonBlockingPostHandler);
+    return new JdkQueryHandler(nonBlockingPostHandler);
   }
 
   @Override
   protected HttpHandler blockingPost(final QueryHandler blockingPostHandler) {
-    return JdkQueryHandler.createBlockingPostHandler(blockingPostHandler);
+    return new JdkQueryHandler(blockingPostHandler);
   }
 
   @Override

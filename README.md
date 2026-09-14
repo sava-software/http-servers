@@ -101,7 +101,10 @@ serves `/files/a/b`.
 `Request` exposes `method()`, `path()`, `query()`, `header(name)` and `body()`. The query string is
 **raw**: separators arrive as literal `&`, while a `&` or `=` that belongs to a value stays
 percent-encoded, so it can never be mistaken for a separator. `query()` is `null` when the request
-has none, header lookup is case-insensitive, and `body()` is never `null`.
+has none, header lookup is case-insensitive, and `body()` is never `null`. On the JDK, Netty and
+FusionAuth backends `body()` hands back the same bytes however many times it is read — the JDK
+adapter reads the socket once and keeps them, Netty holds the body it decoded, java-http caches
+its own first read; Jetty and Helidon are not pinned either way.
 
 `HandlerUtil` in `software.sava.http_servers.core.handlers` parses that raw string. It matches a
 parameter only at a boundary — the start of the query or just after a `&` — so `page=` never
@@ -136,10 +139,30 @@ is present. Helidon treats `205` as bodyless too, because that is its own no-ent
 content a handler attaches to a `205` is dropped there and sent by every other backend.
 
 **Executors.** Handlers run on virtual threads. The `Executor` handed to `createServer` is
-honoured on the blocking path by the JDK, Jetty and Netty backends, which dispatch blocking
-request handling onto it. Netty runs non-blocking routes and cached responses inline on its event
-loop instead. FusionAuth and Helidon own their worker threads and ignore the executor, so code
-that needs to observe or bound handler dispatch has to pick the JDK, Jetty or Netty backend.
+honoured by the JDK backend for every exchange — `jdk.httpserver` dispatches each one onto it,
+and blocking and non-blocking handlers alike run there, on the dispatching thread — and on the
+blocking path by the Jetty and Netty backends, which dispatch blocking request handling onto it.
+Netty runs non-blocking routes and cached responses inline on its event loop instead. FusionAuth
+and Helidon own their worker threads and ignore the executor, so code that needs to observe or
+bound handler dispatch has to pick the JDK, Jetty or Netty backend. The JDK backend used to hand
+non-blocking handlers to a second executor of its own; it no longer does, because `jdk.httpserver`
+can only clean up an exchange that fails on the thread it dispatched it to (see below).
+
+**A client that leaves.** On the JDK and Netty backends a client that abandons an upload, whether
+it closes the connection or resets it, is not a server failure: the departure is logged at
+`DEBUG`, nothing more is answered, and the connection is closed. The JDK backend treats a client
+that resets while its response is being written the same way; the Netty backend's tests cover
+abandoned uploads only, so nothing is claimed for it there. On the JDK backend that close is also
+what unregisters the connection from `jdk.httpserver`, which otherwise keeps a connection whose
+failure it swallowed for the life of the server; so the adapter never swallows an I/O failure, and
+a bodyless answer (`400`, `404`, `405`, `500`, `204`, `304`) reads and discards the unread request
+body before it writes its head. That order is what keeps a truncated upload to such a path from
+being answered a head and then leaking its connection, and it has a cost on every such answer, not
+only when a client stalls: the head waits until the declared body has arrived, for as long as the
+client takes to send it — a slow or merely large upload to an unrouted path delays its `404` by
+its own transfer time — up to `jdk.httpserver`'s drain amount (`sun.net.httpserver.drainAmount`,
+64 KiB by default), past which the head is written and the connection closed after it, as before.
+A handler that throws is still answered `500` and logged at `ERROR`.
 
 **HTTP/1.0.** The JDK, Jetty, FusionAuth and Netty backends answer an `HTTP/1.0` request, subject
 to the `Host` rule below, and close the connection afterwards unless it asks for
@@ -354,8 +377,9 @@ that escapes a worker is recorded and fails the run), every profile read at leas
 every abuse case ran or was skipped for a stated reason, and at least one request per second per
 connection was made over the run — no `LEAK:` report was counted or logged, no `OutOfMemoryError`
 or heap dump appeared, no `SEVERE` record was logged beyond the ones the load provokes (one per
-`GET /fail`, and up to one per upload abandoned mid-body, by reset or half-close: the JDK backend's
-handler fails on either, Netty logs neither), live threads and open descriptors ended within a
+`GET /fail`, and up to one per upload abandoned mid-body, by reset or half-close, which a backend
+may or may not log — the JDK backend used to log both as handler failures and now, like Netty, logs
+neither above `DEBUG`), live threads and open descriptors ended within a
 small margin of their post-warm-up baseline (16 threads, 64 descriptors), the least-squares RSS
 slope over the post-warm-up samples is at most 2 MiB per hour — or 8 MiB over the whole fitted
 window when that is larger, because a short run cannot resolve a slope that small — the
