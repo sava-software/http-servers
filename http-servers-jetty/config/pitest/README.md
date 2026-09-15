@@ -19,7 +19,7 @@ that is expected and safe.
 
 Measured 2026-07-24 (`pitestModeSnapshot` solo + gate, `pitestModeCompare`):
 two rows flipped across modes, both already insured — `JettyQueryHandler` 43
-(gate=KILLED, solo=SURVIVED) and `JettyServerBuilder` 29 (same directions;
+(gate=KILLED, solo=SURVIVED) and `JettyServerBuilder` 53 (same directions;
 the "explicit documentation" acceptance is also load-flappy). Zero uninsured
 flips anywhere in the repo.
 
@@ -115,10 +115,27 @@ executor 2026-07-22).
   UriCompliance claim on every Jetty major/minor bump — the 400-from-Jetty
   measurement is what keeps these four equivalent. The jdk and fusionauth
   twins of this branch are live and killed by `ambiguousPathsAreRefused`.
-- `# explicit-default doc` — `JettyServerBuilder` 29 (`setSendXPoweredBy(false)`
+- `# explicit-default doc` — `JettyServerBuilder` 53 (`setSendXPoweredBy(false)`
   removal): the flag's
   default is already false; the call is explicit documentation. (Its
   `setSendServerVersion` sibling defaults *on* and is killed.)
+
+**Thread-pool budget (2026-09-15).** `initRestServer` sized its pool to one platform
+thread per processor, and Jetty's `ThreadPoolBudget` refuses to start a connector unless
+the pool's maximum exceeds what its components lease (reserved threads, acceptors,
+selectors): no server started on one or two processors, nor on three without an executor.
+The builder now raises the pool to one thread beyond the leases it predicts from Jetty's
+own heuristics (`leasedThreads`, `maxThreads`). The population moves 73 → 79, every
+newcomer killed, no row added: the `leasedThreads` sums and return by
+`theLeasePredictionMatchesJettysBudget*` (the oracle is Jetty's lease count after start),
+`maxThreads` by its table test, and the `setMaxThreads` removal — equivalent on any host
+with four or more processors — by `aServerStartsAndAnswersWhenJettyCountsOneToThreeProcessors`,
+which lowers Jetty's `ProcessorUtils` count in-process. The builder sizes from that same
+count, so this is the only route by which PIT can see a small host. The real small-host JVMs
+(`smallHostTest1..3`, `-XX:ActiveProcessorCount=1..3`) run under `check`, outside PIT's
+reach: a forked JVM never loads a mutant. Measured history-free 2026-09-15: 79 generated,
+65 detected, 11 survived and 3 no-coverage all within accepted rows, 6 `TIMED_OUT` in
+audited keys.
 
 ## Audited timeouts (`dispatch-timeouts.csv`)
 

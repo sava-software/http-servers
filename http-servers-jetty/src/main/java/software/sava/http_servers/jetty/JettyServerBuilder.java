@@ -7,7 +7,9 @@ import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.util.ProcessorUtils;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.eclipse.jetty.util.thread.ReservedThreadExecutor;
 import software.sava.http_servers.core.handlers.HandlerMap;
 import software.sava.http_servers.core.response.CachedResponse;
 import software.sava.http_servers.core.response.QueryHandler;
@@ -18,9 +20,31 @@ import java.util.concurrent.Executor;
 
 public class JettyServerBuilder extends BaseHttpServerBuilder<Handler, Server> {
 
+  /// Jetty refuses to start a connector ("Insufficient configured threads") unless the pool's
+  /// maximum exceeds the threads its components lease, so a pool of one platform thread per
+  /// processor is raised to one thread beyond those leases when it would not clear them —
+  /// which happens on one to three processors, never on a larger host.
+  static int maxThreads(final int availableProcessors, final int leasedThreads) {
+    return Math.max(availableProcessors, leasedThreads + 1);
+  }
+
+  /// The threads Jetty's `ThreadPoolBudget` leases from `threadPool` when the server starts:
+  /// the reserved-thread executor (none once a virtual-thread executor is set), the
+  /// connector's acceptors and its selectors, each read from Jetty's own heuristics before
+  /// start. The reserved count also depends on the pool's maximum, but only from 16 threads
+  /// up, and [#maxThreads] raises a pool only while these leases (at most 3 below 16 threads)
+  /// meet the processor count, so raising it never changes this prediction.
+  static int leasedThreads(final QueuedThreadPool threadPool, final ServerConnector connector) {
+    return ReservedThreadExecutor.reservedThreads(threadPool, threadPool.getReservedThreads())
+        + connector.getAcceptors()
+        + connector.getSelectorManager().getSelectorCount();
+  }
+
   @Override
   protected Server initRestServer(final Executor executor, final String host, final int port) {
-    final var threadPool = new QueuedThreadPool(Runtime.getRuntime().availableProcessors());
+    // The count Jetty's lease heuristics read: the JVM's, unless JETTY_AVAILABLE_PROCESSORS overrides it.
+    final int availableProcessors = ProcessorUtils.availableProcessors();
+    final var threadPool = new QueuedThreadPool(availableProcessors);
     threadPool.setVirtualThreadsExecutor(executor);
     final var server = new Server(threadPool);
 
@@ -36,6 +60,7 @@ public class JettyServerBuilder extends BaseHttpServerBuilder<Handler, Server> {
     }
     serverConnector.setPort(port);
     server.addConnector(serverConnector);
+    threadPool.setMaxThreads(maxThreads(availableProcessors, leasedThreads(threadPool, serverConnector)));
 
     return server;
   }

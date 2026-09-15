@@ -12,4 +12,4 @@ software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMu
 software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 96
 software.sava.http_servers.jetty.JettyController,handle,BooleanTrueReturnValsMutator,SURVIVED # handled-flag family # line 96
 software.sava.http_servers.jetty.JettyQueryHandler,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 43
-software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,VoidMethodCallMutator,SURVIVED # explicit-default doc (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 29
+software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,VoidMethodCallMutator,SURVIVED # explicit-default doc (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 53

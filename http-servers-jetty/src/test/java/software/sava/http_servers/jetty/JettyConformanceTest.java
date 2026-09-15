@@ -686,12 +686,12 @@ final class JettyConformanceTest {
     }
   }
 
-  private record OwnedServer(software.sava.http_servers.core.server.HttpServer server, int port) {
+  record OwnedServer(software.sava.http_servers.core.server.HttpServer server, int port) {
   }
 
   /// Like [#start], but hands the server back so the caller owns its lifecycle.
-  private static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
-                                        final java.util.concurrent.Executor executor) throws Exception {
+  static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
+                                final java.util.concurrent.Executor executor) throws Exception {
     for (int attempt = 0; ; ++attempt) {
       final int port = freePort();
       final var server = builder.createServer(executor, "localhost", port);
