@@ -1,5 +1,23 @@
 # Changelog
 
+## [25.4.1](https://github.com/sava-software/http-servers/compare/25.4.0...25.4.1) (2026-09-16)
+
+
+### Features
+
+* add Helidon and Netty backends ([3864332](https://github.com/sava-software/http-servers/commit/386433226c518e49c3ad032a0a62196d7dfc59cd))
+* **soak:** add a soak-test harness with flight recording ([30e9ed6](https://github.com/sava-software/http-servers/commit/30e9ed6527edc86ac11fa28b831d8bb6ede0d2fd))
+
+
+### Bug Fixes
+
+* **deps:** resolve Helidon and Netty through solana-version-catalog 25.30.21 ([2b30e60](https://github.com/sava-software/http-servers/commit/2b30e6043d3ddfad524066f67b4137d5d5abd5ac))
+* **jdk:** stop leaking connections when a client leaves ([e76885a](https://github.com/sava-software/http-servers/commit/e76885ab07b0ddf97c71c512e4f7418d1a011f0d))
+* **jetty:** start on hosts with one to three processors ([47da1f5](https://github.com/sava-software/http-servers/commit/47da1f5ab16a08558d0982d747f8c6801270355d))
+* **netty:** close idle connections after 30 s ([d85a6f7](https://github.com/sava-software/http-servers/commit/d85a6f74cb54efa5d35cb3a355f1f1e8a8de7a9b))
+* **netty:** decide expectation refusals at decode time ([5e2a648](https://github.com/sava-software/http-servers/commit/5e2a648fc9f68d07f95a517973d31125deab13a8))
+* **netty:** log a client reset like a client close ([e29c9b3](https://github.com/sava-software/http-servers/commit/e29c9b389d9d8c60407ed5bc662c9fab0fbc70ed))
+
 ## [25.4.0](https://github.com/sava-software/http-servers/compare/25.3.0...25.4.0) (2026-09-04)
 
 
