@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.4.2](https://github.com/sava-software/http-servers/compare/25.4.1...25.4.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **ci:** restrict workflow token permissions ([8272777](https://github.com/sava-software/http-servers/commit/82727774bf4ce1a1068f8fba8377359987467357))
+
 ## [25.4.1](https://github.com/sava-software/http-servers/compare/25.4.0...25.4.1) (2026-09-16)
 
 
