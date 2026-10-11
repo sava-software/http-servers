@@ -1,5 +1,26 @@
 # Changelog
 
+## [25.4.2](https://github.com/sava-software/http-servers/compare/25.4.1...25.4.2) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **fusionauth:** software.sava:http-servers-fusionauth is no longer built and FusionAuthBuilderFactory no longer exists. Its last published version is 25.4.0; 25.4.1 already stopped publishing it. Move to the jdk, jetty, helidon or netty backend. A service that selects its backend through HttpServerBuilderFactory changes only the runtime dependency and the factory name it asks for. The backends still differ on the wire: the README's Backend divergences and CORS sections describe how, and error bodies differ too (Jetty, Helidon and Netty answer a GET's 404 or 405 with a JSON body, the JDK backend with none).
+
+### Features
+
+* **build:** add sava module to aggregation config ([4d75241](https://github.com/sava-software/http-servers/commit/4d75241c02b4f759f861291626e1f3193a0ee9b4))
+* **fusionauth:** drop the FusionAuth backend ([5ba0015](https://github.com/sava-software/http-servers/commit/5ba00156d79301fb63faa85fa1915d21ff054c0f))
+* **tests:** add tests for port binding retries and failure scenarios ([821deb0](https://github.com/sava-software/http-servers/commit/821deb04ec7602f538ea613e4c307ce6c4aeeba8))
+
+
+### Bug Fixes
+
+* **build:** update Gradle to 9.8 and align configurations ([edde038](https://github.com/sava-software/http-servers/commit/edde038dd17fa00c09f13808f1ef58bbd33bfc42))
+* **ci:** restrict workflow token permissions ([8272777](https://github.com/sava-software/http-servers/commit/82727774bf4ce1a1068f8fba8377359987467357))
+* **jetty:** keep exception detail out of error responses ([eee3ece](https://github.com/sava-software/http-servers/commit/eee3ece95022d6578064a638ae2f9c26dc39513d))
+* **x402:** update transferChecked calls to include reallocation flag ([b2f3004](https://github.com/sava-software/http-servers/commit/b2f3004d39f04c4cf68cdfee1801ffe8d0d5b653))
+
 ## [25.4.1](https://github.com/sava-software/http-servers/compare/25.4.0...25.4.1) (2026-09-16)
 
 
