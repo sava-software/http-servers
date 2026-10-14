@@ -28,6 +28,9 @@ none on the JDK backend.
 Artifacts are published to GitHub Packages. See
 [sava.software/quickstart](https://sava.software/quickstart) for repository configuration.
 
+A pull request from a fork is built offline, from the dependency cache the last run on `main`
+left: it cannot add or change a dependency.
+
 ```kotlin
 dependencies {
   implementation(platform("software.sava:solana-version-catalog:VERSION"))
