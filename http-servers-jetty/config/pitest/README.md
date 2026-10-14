@@ -114,15 +114,6 @@ return's `true` direction (`aRoutedHandlerThatDeclinesIsAnsweredWithJettys404`).
   observer the acceptance said required another network interface. PIT now
   credits the guard's kill to `theConnectorBindsTheRequestedHost` (added
   2026-08-07), which reads the requested host off the unstarted connector.
-- `# null-origin no-op` — was `JettyController.handle`'s `origin != null`
-  guard (`EQUAL_IF`): forcing the branch with a null origin made
-  `put(ACCESS_CONTROL_ALLOW_ORIGIN, null)` — a header *remove*, i.e. a no-op.
-  The guard was refactored out on 2026-10-14: the controller now relies on
-  that remove for both of its echoes, with `blankOriginIsNotReflected` and
-  `preflightWithoutRequestHeadersOmitsAllowHeaders` pinning it, and a
-  pre-flight cannot be read without an origin (`CorsRequest.options`). The
-  coordinate has left the population; the row leaves through the Prune
-  protocol once two fresh history-free previews agree.
 - `# explicit-default doc` — the `setSendXPoweredBy(false)` call in
   `JettyServerBuilder.initRestServer` (its removal): the flag's default is
   already false; the call is explicit documentation. (Its

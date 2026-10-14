@@ -106,8 +106,9 @@ The first code to touch every untrusted request: query-string parsing (`HandlerU
 method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
 
 - `./gradlew :http-servers-core:pitestHandlers` — PIT over the `handlers` package (wildcard)
-  against `handlers.*Test*`. 143 mutants (the canonical-routing contract of 2026-07-24
-  added `PathCanonicalizer` and the `HandlerLookup.badRequest()` state); 1 accepted
+  against `handlers.*Test*`. 159 mutants (the canonical-routing contract of 2026-07-24
+  added `PathCanonicalizer` and the `HandlerLookup.badRequest()` state; the CORS rule of
+  2026-10-14 added `CorsRequest`); 1 accepted
   equivalent (triaged in `config/pitest/README.md`) and 3 timed-out (load-dependent loop
   conversions). Tests live in `HandlerUtilTests`, `HandlerMapTests`,
   `PathCanonicalizerTests` and, since 2026-10-14, `CorsRequestTests`:
@@ -115,7 +116,6 @@ method/path resolution (`HandlerMapImpl`, `HandlerLookup`).
   (a blank `Origin` names no origin; a pre-flight is an `OPTIONS` naming an origin
   and a non-blank requested method, and routes to that method), so its mutants
   are killed here and the adapters' socket suites pin only that they ask it.
-  Recount the population at the next gate.
 - `./gradlew :http-servers-core:pitestWiring` — PIT over `BaseHandlerWiring` (the handler-group
   include/exclude filter that decides which handlers get registered) against
   `BaseHandlerWiringTests`. 70 mutants, **100% killed**, empty baseline — keep it that way.
@@ -175,8 +175,8 @@ Helidon's own routing never decides a match. Versions come from `solana-version-
   (wildcard) against `helidon.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER`
   because `ServerResponse.status`/`header` and `WebServerConfig.Builder` are fluent, so a dropped
   header or listener setting is invisible to `VoidMethodCallMutator` (trial 2026-09-12: 13
-  generated, 13 killed). 77 mutants before the pre-flight conditionals moved to core's
-  `CorsRequest` on 2026-10-14 (recount at the next gate), **100% killed**, no accepted baseline file and an empty,
+  generated, 13 killed). 73 mutants since the pre-flight conditionals moved to core's
+  `CorsRequest` on 2026-10-14, **100% killed**, no accepted baseline file and an empty,
   armed `dispatch-timeouts.csv` — keep both that way. The covering tests are real socket round
   trips in `HelidonConformanceTest` and `HelidonPostHandlerTest`.
 
@@ -221,8 +221,8 @@ later).
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
   `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
-  `ServerBootstrap` chain all return their receiver. 192 mutants before the pre-flight conditionals
-  moved to core's `CorsRequest` on 2026-10-14 (recount at the next gate), **100% killed**, no accepted
+  `ServerBootstrap` chain all return their receiver. 188 mutants since the pre-flight conditionals
+  moved to core's `CorsRequest` on 2026-10-14, **100% killed**, no accepted
   baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
   tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
   `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so

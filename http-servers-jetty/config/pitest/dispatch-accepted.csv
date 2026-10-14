@@ -1,8 +1,7 @@
 software.sava.http_servers.jetty.JettyCachedJsonResponseHandler,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 30
-software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 116
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 117
 software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 83
-software.sava.http_servers.jetty.JettyController,handle,RemoveConditionalMutator_EQUAL_IF,SURVIVED # null-origin no-op # line 86
-software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 95
-software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 98
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family # line 97
+software.sava.http_servers.jetty.JettyController,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 99
 software.sava.http_servers.jetty.JettyQueryHandler,handle,BooleanFalseReturnValsMutator,SURVIVED # handled-flag family (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 46
 software.sava.http_servers.jetty.JettyServerBuilder,initRestServer,VoidMethodCallMutator,SURVIVED # explicit-default doc (flip insurance: gate=KILLED, solo=SURVIVED 2026-07-24) # line 53
