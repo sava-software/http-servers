@@ -5,6 +5,7 @@ import io.helidon.http.Method;
 import io.helidon.webserver.http.Handler;
 import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
+import software.sava.http_servers.core.handlers.CorsRequest;
 import software.sava.http_servers.core.handlers.HandlerMap;
 
 import java.nio.charset.StandardCharsets;
@@ -75,18 +76,17 @@ final class HelidonController implements Handler {
     // twice ("/a%2541" would route as "/aA" here and "/a%41" elsewhere)
     final var path = request.path().rawPath();
     final var requestHeaders = request.headers();
-    final String accessControlRequestMethod;
-    final boolean preFlight;
-    if (Method.OPTIONS.equals(requestMethod)) {
-      accessControlRequestMethod = requestHeaders.first(HeaderNames.ACCESS_CONTROL_REQUEST_METHOD).orElse(null);
-      preFlight = accessControlRequestMethod != null && !accessControlRequestMethod.isBlank();
-    } else {
-      accessControlRequestMethod = null;
-      preFlight = false;
-    }
-    final var method = preFlight
-        ? accessControlRequestMethod
-        : requestMethod.text();
+    // the shared CORS rule (CorsRequest): a pre-flight names an origin and the method it asks
+    // for, which is then the method to route; anything else, an OPTIONS missing either
+    // header included, routes as itself, which nothing registered through the builder
+    // answers, so it gets 405 with Allow as on the JDK backend
+    final var cors = Method.OPTIONS.equals(requestMethod)
+        ? CorsRequest.options(
+            requestHeaders.first(HeaderNames.ORIGIN).orElse(null),
+            requestHeaders.first(HeaderNames.ACCESS_CONTROL_REQUEST_METHOD).orElse(null),
+            requestHeaders.first(HeaderNames.ACCESS_CONTROL_REQUEST_HEADERS).orElse(null))
+        : CorsRequest.of(requestHeaders.first(HeaderNames.ORIGIN).orElse(null));
+    final var method = cors.method(requestMethod.text());
 
     final var lookup = handlerMap.lookupHandler(method, path);
     final var handler = lookup.handler();
@@ -103,16 +103,17 @@ final class HelidonController implements Handler {
         error(response, 405, METHOD_NOT_ALLOWED, bodyless);
       }
     } else {
-      final var origin = requestHeaders.first(HeaderNames.ORIGIN).orElse(null);
+      final var origin = cors.origin();
       if (origin != null) {
         response.header(HeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-        // if pre-flight check.
-        if (preFlight) {
+        // the pre-flight branch: never entered without an origin (CorsRequest)
+        if (cors.preflight()) {
           // the requested method resolved to a handler, so it is allowed; browsers reject a
           // pre-flight that does not name the method
           response.header(HeaderNames.ACCESS_CONTROL_ALLOW_METHODS, method);
-          final var requestedHeaders = requestHeaders.first(HeaderNames.ACCESS_CONTROL_REQUEST_HEADERS).orElse(null);
+          final var requestedHeaders = cors.requestedHeaders();
           if (requestedHeaders != null) {
+            // Helidon refuses a null header value, so the no-headers pre-flight echoes none
             response.header(HeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, requestedHeaders);
           }
           response.send();

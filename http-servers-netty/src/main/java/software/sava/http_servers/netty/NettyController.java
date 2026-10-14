@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import software.sava.http_servers.core.handlers.CorsRequest;
 import software.sava.http_servers.core.handlers.HandlerMap;
 
 import java.io.IOException;
@@ -18,7 +19,7 @@ import static java.lang.System.Logger.Level.ERROR;
 
 /// The root handler of every connection: resolves the shared [HandlerMap] on the raw,
 /// undecoded request target, answers 400/404/405 with the same JSON bodies as the Jetty and
-/// Helidon controllers, reflects `Origin` into `Access-Control-Allow-Origin` and answers
+/// Helidon controllers, reflects a non-blank `Origin` into `Access-Control-Allow-Origin` and answers
 /// CORS pre-flights the same way they do, except one sent as a lowercase `options`:
 /// Helidon's parser upper-cases the method token, so Helidon answers it as a pre-flight,
 /// while this controller, like Jetty's, answers it as an unknown method (405).
@@ -99,21 +100,20 @@ final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest>
       )));
       return;
     }
-    final String accessControlRequestMethod;
-    final boolean preFlight;
-    // case-sensitive on purpose: RFC 9110 §9.1 makes the method token case-sensitive, so a
-    // lowercase "options" is an unknown method here (405), as on Jetty; Helidon's parser
-    // upper-cases the token, so there it can still be a pre-flight
-    if (HttpMethod.OPTIONS.name().equals(request.method())) {
-      accessControlRequestMethod = request.header("Access-Control-Request-Method");
-      preFlight = accessControlRequestMethod != null && !accessControlRequestMethod.isBlank();
-    } else {
-      accessControlRequestMethod = null;
-      preFlight = false;
-    }
-    final var method = preFlight
-        ? accessControlRequestMethod
-        : request.method();
+    // the shared CORS rule (CorsRequest): a pre-flight names an origin and the method it asks
+    // for, which is then the method to route; anything else, an OPTIONS missing either
+    // header included, routes as itself, which nothing registered through the builder
+    // answers, so it gets 405 with Allow as on the JDK backend
+    // the OPTIONS test is case-sensitive on purpose: RFC 9110 §9.1 makes the method token
+    // case-sensitive, so a lowercase "options" is an unknown method here (405), as on Jetty;
+    // Helidon's parser upper-cases the token, so there it can still be a pre-flight
+    final var cors = HttpMethod.OPTIONS.name().equals(request.method())
+        ? CorsRequest.options(
+            request.header("Origin"),
+            request.header("Access-Control-Request-Method"),
+            request.header("Access-Control-Request-Headers"))
+        : CorsRequest.of(request.header("Origin"));
+    final var method = cors.method(request.method());
 
     final var lookup = handlerMap.lookupHandler(method, request.path());
     final var handler = lookup.handler();
@@ -142,26 +142,25 @@ final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest>
       }
       ctx.writeAndFlush(response);
     } else {
-      final var origin = request.header("Origin");
-      // if pre-flight check.
-      if (origin != null && preFlight) {
+      // the pre-flight branch: never entered without an origin (CorsRequest)
+      if (cors.preflight()) {
         // the requested method resolved to a handler, so it is allowed; without this
         // header browsers reject the pre-flight
         final var response = ResponseUtil.emptyResponse(HttpResponseStatus.OK);
         final var responseHeaders = response.headers();
-        responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+        responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, cors.origin());
         responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, method);
-        final var requestHeaders = request.header("Access-Control-Request-Headers");
-        if (requestHeaders != null) {
+        final var requestedHeaders = cors.requestedHeaders();
+        if (requestedHeaders != null) {
           // DefaultHttpHeaders refuses a null value, which Helidon also fails on (its adapter
           // guards the same echo) and Jetty's put() treats as a remove, i.e. a no-op
-          responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, requestHeaders);
+          responseHeaders.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, requestedHeaders);
         }
         ctx.writeAndFlush(response);
       } else if (handler.blocking()) {
-        executor.execute(() -> invoke(ctx, request, handler));
+        executor.execute(() -> invoke(ctx, request, handler, cors.origin()));
       } else {
-        invoke(ctx, request, handler);
+        invoke(ctx, request, handler, cors.origin());
       }
     }
   }
@@ -170,10 +169,13 @@ final class NettyController extends SimpleChannelInboundHandler<FullHttpRequest>
   /// and answers whatever the handler throws itself, on either path: an executor task has no
   /// pipeline to route a throw to [#exceptionCaught], and [#clientLeft] there would read a
   /// handler's own `Connection reset` as the peer leaving.
-  private void invoke(final ChannelHandlerContext ctx, final NettyRequest request, final NettyHandler handler) {
+  private void invoke(final ChannelHandlerContext ctx,
+                      final NettyRequest request,
+                      final NettyHandler handler,
+                      final String origin) {
     FullHttpResponse response;
     try {
-      response = ResponseUtil.response(handler.handle(request), request.header("Origin"));
+      response = ResponseUtil.response(handler.handle(request), origin);
     } catch (final RuntimeException e) {
       // an unanswered request would hang the client, and everything queued behind it
       logger.log(ERROR, "Failed to process request.", e);

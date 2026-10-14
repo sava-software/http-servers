@@ -85,28 +85,30 @@ paths:
         `405 Allow: GET`, whatever headers it carries.
 
         On the backends that support it, a request is treated as a pre-flight only when it is
-        `OPTIONS` **and** carries a non-blank `Access-Control-Request-Method`. The controller
-        resolves that requested method against the handler map. If it does not resolve, the
-        ordinary `404`/`405` path applies, so a pre-flight for `POST` on `/hello` gets
-        `405 Allow: GET`. If it resolves and the request carries an `Origin`, the pre-flight is
-        approved and answered directly by the controller with an empty body. If it resolves but
-        no `Origin` is present, the controller does not answer it: the request goes to the
-        requested method's handler, so `OPTIONS /hello` with `Access-Control-Request-Method: GET`
-        and no `Origin` gets the greeting.
+        `OPTIONS` **and** carries both a non-blank `Origin` and a non-blank
+        `Access-Control-Request-Method`.
+        The controller resolves that requested method against the handler map. If it does not
+        resolve, the ordinary `404`/`405` path applies, so a pre-flight for `POST` on `/hello` gets
+        `405 Allow: GET`. If it resolves, the pre-flight is approved and answered directly by the
+        controller with an empty body; the handler is never invoked.
 
-        The CORS headers are only written when the request carries an `Origin`. An `OPTIONS`
-        request without `Access-Control-Request-Method` is not a pre-flight and falls through to
+        An `OPTIONS` request missing either header is not a pre-flight and falls through to
         normal routing, which yields `405` with `Allow: GET` because no `OPTIONS` handler is
-        registered.
+        registered: `OPTIONS /hello` with `Access-Control-Request-Method: GET` and no `Origin` is
+        answered `405`, never with the greeting. The CORS headers are only written when the
+        request carries an `Origin`.
       parameters:
         - $ref: '#/components/parameters/Origin'
         - name: Access-Control-Request-Method
           in: header
-          required: true
-          description: The method the browser intends to use. Must be non-blank to count as a pre-flight.
+          required: false
+          description: |
+            The method the browser intends to use. An `OPTIONS` request counts as a pre-flight only
+            when it carries a non-blank one; without it the request is answered `405` as described
+            above, which is why it is not marked required.
           schema:
             type: string
-            example: GET
+            examples: [GET]
         - name: Access-Control-Request-Headers
           in: header
           required: false
@@ -118,8 +120,7 @@ paths:
           description: |
             Pre-flight approved; the body is empty. Only reachable on the Jetty, Helidon and Netty
             backends, and only when the request carries both `Origin` and a resolvable
-            `Access-Control-Request-Method`. Without `Origin`, the same request is answered by the
-            requested method's handler instead (see the description above).
+            `Access-Control-Request-Method`; without either header the request is answered `405`.
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/AccessControlAllowOrigin'
@@ -129,7 +130,7 @@ paths:
                 it resolved to a handler. Sent only on pre-flights; ordinary responses omit it.
               schema:
                 type: string
-                example: GET
+                examples: [GET]
             Access-Control-Allow-Headers:
               description: Echo of `Access-Control-Request-Headers`.
               schema:
@@ -167,20 +168,25 @@ components:
   headers:
     AccessControlAllowOrigin:
       description: |
-        Echo of the request's `Origin`, written whenever that header is present. Absent otherwise —
-        the service does not emit a wildcard. Jetty, Helidon and Netty backends only; the JDK backend
-        never writes this header.
+        Echo of the request's `Origin`, written on a handler's response and on an approved
+        pre-flight when the request names one (a blank `Origin` names none). Absent otherwise:
+        the controller's own `400`,
+        `404`, `405` and `500` answers never carry it, and the service does not emit a wildcard.
+        Jetty, Helidon and Netty backends only; the JDK backend never writes this header.
       required: false
       schema:
         type: string
-        example: https://example.test
+        examples: [https://example.test]
 
   parameters:
     Origin:
       name: Origin
       in: header
       required: false
-      description: When present, echoed back in `Access-Control-Allow-Origin`.
+      description: |
+        The origin asking; echoed back in `Access-Control-Allow-Origin`. An `OPTIONS` request
+        counts as a pre-flight only when it carries a non-blank one; without it the request is
+        answered `405` as the operation describes, which is why it is not marked required.
       schema:
         type: string
 
@@ -195,7 +201,7 @@ components:
           required: true
           schema:
             type: string
-            example: GET
+            examples: [GET]
       content:
         application/json:
           schema:

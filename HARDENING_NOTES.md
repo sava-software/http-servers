@@ -36,9 +36,18 @@ edges the ratchet cannot see.
   JSON responses, case-insensitive header lookup, and a never-null body. These
   are socket-level oracles shared by all four backends, not framework-local
   conveniences. CORS is not shared: the Jetty, Helidon and Netty suites pin
-  pre-flight handling, only Helidon's and Netty's pin that a blank requested
-  method is not a pre-flight, and the JDK backend has no CORS handling, which
-  its suite pins as `optionsAnswers405WithoutCorsSupport`.
+  pre-flight handling. Since 2026-10-14 the rule itself (a blank `Origin` names
+  no origin; a pre-flight is an `OPTIONS` naming an origin and a non-blank
+  requested method, and routes to that method) is core's `CorsRequest`, mutated
+  under `pitestHandlers` and pinned by `CorsRequestTests`; the three socket
+  suites pin that each adapter asks it
+  (`preflightWithoutOriginIsNotAPreflight`, `blankOriginIsNotAPreflight`,
+  `blankOriginIsNotReflected`, `blankRequestMethodHeaderIsNotAPreflight`), which
+  cannot kill core's rows. The blank-header pins send the blank over a raw socket
+  and observe the 405 and the absent CORS headers, which a server that dropped
+  the blank header at parse time would also produce: they pin the answer, the
+  rule itself is `CorsRequestTests`' job. The JDK backend has no CORS handling,
+  which its suite pins as `optionsAnswers405WithoutCorsSupport`.
 - **Socket kills are load-sensitive.** Every adapter dispatch suite kills
   through real socket round trips, so detection wall clock rides on gate
   parallelism: coordinates flip between `SURVIVED` and detected under

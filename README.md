@@ -278,11 +278,19 @@ the `Host` header names a different authority than the target does.
 
 ### CORS
 
-The Jetty, Helidon and Netty backends reflect the request `Origin` into
+The Jetty, Helidon and Netty backends reflect a non-blank request `Origin` into
 `Access-Control-Allow-Origin` and answer pre-flight `OPTIONS` requests for any method that
-resolves to a handler. These servers are expected to sit behind a proxy or gateway that owns
-origin policy and authentication. The JDK backend has no CORS handling, so a pre-flight `OPTIONS`
-is simply an unrouted method there and is answered with `405` and an `Allow` header.
+resolves to a handler. A pre-flight is an `OPTIONS` request carrying both a non-blank `Origin`
+and a non-blank `Access-Control-Request-Method`; the controller answers it itself, with an empty
+body, and the named method's handler is never invoked. An `OPTIONS` request missing either
+header is routed as the ordinary request it is, which nothing registered through
+`HttpServerBuilder` answers, since it registers GET and POST only: `405` with `Allow` where
+the path serves other methods, `404` where it serves none, like any unrouted request.
+Reflection is wildcard-equivalent by design: any named origin is echoed, the opaque `null`
+origin included, and no backend sends `Access-Control-Allow-Credentials`. These servers are
+expected to sit behind a proxy or gateway that owns origin policy and authentication. The JDK
+backend has no CORS handling, so a pre-flight `OPTIONS` is simply an unrouted method there and
+is answered with `405` and an `Allow` header.
 
 ### Conditional registration
 

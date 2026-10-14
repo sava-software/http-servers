@@ -49,8 +49,8 @@ final class ResponseUtil {
     return response;
   }
 
-  /// A handler's response; `origin` is the request's `Origin` header, or null when it carried
-  /// none. The status written is the one [HttpResponse#checkFinalStatus] returns, so a status
+  /// A handler's response; `origin` is the origin the request names, or null when it carried
+  /// no `Origin` or a blank one (`CorsRequest`). The status written is the one [HttpResponse#checkFinalStatus] returns, so a status
   /// that is not final throws `IllegalStateException` here, inside `NettyController.invoke`'s
   /// guard, which answers it 500. Written as given, a `1xx` would go out as an interim head
   /// with its body dropped by the encoder, and leave the request in flight: the gate completes

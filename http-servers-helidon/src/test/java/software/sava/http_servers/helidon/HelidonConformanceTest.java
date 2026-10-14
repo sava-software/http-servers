@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Pins the parts of the core Request/HttpResponse contract that every backend must agree
@@ -331,6 +332,62 @@ final class HelidonConformanceTest {
   }
 
   @Test
+  void preflightWithoutOriginIsNotAPreflight() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/simple", request -> HttpResponse.response("text/plain", "body")));
+
+    try (final var client = HttpClient.newHttpClient()) {
+      final var response = client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/simple"))
+              .timeout(Duration.ofSeconds(10))
+              .header("Access-Control-Request-Method", "GET")
+              .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+              .build(),
+          BodyHandlers.ofString());
+      assertEquals(405, response.statusCode(),
+          "an OPTIONS naming a method but carrying no Origin is not a cross-origin pre-flight: it "
+              + "routes as the OPTIONS it is, which no handler answers, instead of reaching the GET handler");
+      assertEquals("GET", response.headers().firstValue("Allow").orElse(null),
+          "the ordinary 405 names the methods the path does serve");
+      assertTrue(response.headers().firstValue("Access-Control-Allow-Origin").isEmpty(),
+          "nothing to reflect without an Origin");
+      assertTrue(response.headers().firstValue("Access-Control-Allow-Methods").isEmpty(),
+          "Allow-Methods is a pre-flight answer, and this was none");
+    }
+  }
+
+  @Test
+  void blankOriginIsNotAPreflight() throws Exception {
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/simple", request -> HttpResponse.response("text/plain", "body")));
+
+    // raw, so the blank header is known to be on the wire: a client library may drop it
+    final var response = rawExchange(port, "OPTIONS /simple HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: \r\n"
+        + "Access-Control-Request-Method: GET\r\nConnection: close\r\n\r\n").response();
+    assertEquals(405, rawStatus(response),
+        "a blank Origin names no origin, so the request is no more a pre-flight than one without the header: " + response);
+    assertEquals("GET", rawHeader(response, "Allow"), response);
+    assertNull(rawHeader(response, "Access-Control-Allow-Origin"), response);
+    assertNull(rawHeader(response, "Access-Control-Allow-Methods"), response);
+  }
+
+  @Test
+  void blankOriginIsNotReflected() throws Exception {
+    // the handler echoes the raw header, so the pin sees the blank arrive rather than vanish
+    final int port = serve(builder ->
+        builder.blockingQueryHandler("/simple", request ->
+            HttpResponse.response("text/plain", String.valueOf(request.header("Origin")))));
+
+    final var response = rawExchange(port,
+        "GET /simple HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: \r\nConnection: close\r\n\r\n").response();
+    assertEquals(200, rawStatus(response), response);
+    assertEquals("", rawBody(response).strip(),
+        "the blank header reached the handler as a blank value, not as an absent one: " + response);
+    assertNull(rawHeader(response, "Access-Control-Allow-Origin"),
+        "a blank Origin names no origin, so there is nothing to reflect: the same reading as the pre-flight rule: " + response);
+  }
+
+  @Test
   void bodyOnAGetRequestIsEmptyNotNull() throws Exception {
     final int port = serve(builder ->
         builder.blockingQueryHandler("/len", request ->
@@ -346,18 +403,13 @@ final class HelidonConformanceTest {
     final int port = serve(builder ->
         builder.blockingQueryHandler("/simple", request -> HttpResponse.response("text/plain", "body")));
 
-    try (final var client = HttpClient.newHttpClient()) {
-      final var response = client.send(
-          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/simple"))
-              .timeout(Duration.ofSeconds(10))
-              .header("Origin", "https://app.example")
-              .header("Access-Control-Request-Method", " ")
-              .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
-              .build(),
-          BodyHandlers.ofString());
-      assertEquals(405, response.statusCode(),
-          "a blank Access-Control-Request-Method is not a pre-flight");
-    }
+    // raw, so the blank header is known to be on the wire: a client library may drop it
+    final var response = rawExchange(port, "OPTIONS /simple HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: https://app.example\r\n"
+        + "Access-Control-Request-Method: \r\nConnection: close\r\n\r\n").response();
+    assertEquals(405, rawStatus(response),
+        "a blank Access-Control-Request-Method names no method, so the request is not a pre-flight: " + response);
+    assertEquals("GET", rawHeader(response, "Allow"), response);
+    assertNull(rawHeader(response, "Access-Control-Allow-Methods"), response);
   }
 
   @Test
