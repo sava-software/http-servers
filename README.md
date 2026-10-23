@@ -274,7 +274,18 @@ it with the controller's JSON `400`, since `*` is not a rooted path. The JDK ser
 **Absolute-form targets.** A request line in absolute form, `GET http://host/p HTTP/1.1`, is
 refused with `400` by Netty, which routes on the target as received. The JDK and
 Jetty servers reduce it to its path first and serve it, and Jetty additionally answers `400` when
-the `Host` header names a different authority than the target does.
+the `Host` header names a different authority than the target does. Helidon hands the `http` form
+to the controller as received, so it is refused with the controller's JSON `400` as on Netty and
+the connection stays open; an absolute-form target with an `https` scheme, or an http(s) target
+whose authority is missing, invalid or carries userinfo, is refused by Helidon itself, with a
+zero-byte `400` and a close (measured on 4.5.6).
+
+**Malformed request lines.** A request line Helidon cannot parse, an invalid method token or a
+line with no target or no version, is answered by Helidon itself with a zero-byte `400`,
+`Connection: close` and the close (measured on 4.5.6; for the invalid method token, upstream PR
+12767 turned a parse failure that had escaped the prologue parser into this `400`). Netty's
+`400` and close for an unparsable line is described under request-body size; the JDK and Jetty
+backends are not pinned either way.
 
 ### CORS
 

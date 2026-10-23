@@ -21,8 +21,14 @@ import static java.lang.System.Logger.Level.ERROR;
 /// - Helidon does not canonicalize before routing, so the ambiguous-path 400 is a live branch
 ///   here (Jetty's `UriCompliance` answers most such targets first). Helidon does answer
 ///   a zero-byte 400 itself, before this controller, for a malformed percent escape
-///   (`/pct%zz`), an illegal character in the request target (a backslash, say), and a missing
-///   or blank `Host` header on HTTP/1.1; HTTP/1.0 never gets this far (505, see the README).
+///   (`/pct%zz`), an illegal character in the request target (a backslash, say), a missing
+///   or blank `Host` header on HTTP/1.1 and, measured on 4.5.6 (2026-10-23), with a close for
+///   a request line it cannot parse (an invalid method token, which upstream PR 12767 turned
+///   from an escaped parse failure into a 400, or a line without a target or version) and
+///   for an absolute-form target with an `https` scheme, or an http(s) target whose authority
+///   is missing, invalid or carries userinfo; the plain `http` absolute form, like any other
+///   scheme, still arrives here as received and is refused as ambiguous. HTTP/1.0 never gets
+///   this far (505, see the README).
 /// - Helidon writes an entity on `HEAD` instead of stripping it, which would desync a
 ///   keep-alive connection. Error answers to `HEAD` (400/404/405) therefore carry status and
 ///   headers only, where Netty, and Jetty for 404 and 405, write the JSON body and their

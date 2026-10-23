@@ -8,9 +8,9 @@ import java.util.Set;
 /// generator encodes what a backend is documented to do with hostile traffic. What the README
 /// does not document for a backend is left permissive here (`Closes.EITHER`, a status set of
 /// the documented answers) or, where it documents no answer at all, `null` so the case is
-/// skipped and counted as skipped rather than guessed: a mismatch on Netty is a contract
-/// violation while the same case on another backend can only fail on a shape no backend may
-/// produce.
+/// skipped and counted as skipped rather than guessed: a mismatch on Netty, or on Helidon's
+/// malformed-line and absolute-form rows, is a contract violation, while the same case on a
+/// backend left permissive can only fail on a shape no backend may produce.
 ///
 /// The abuser sends a `Host` header on every request but the one that probes the `Host` rule,
 /// HTTP/1.0 included: Jetty and Helidon require one on HTTP/1.1 only, and the JDK and Netty
@@ -38,9 +38,9 @@ enum Backend {
   HELIDON("HelidonBuilderFactory",
       -1L,
       new Expectation(Set.of(200, 417), Closes.EITHER),
-      null,
+      new Expectation(Set.of(400), Closes.YES),
       new Expectation(Set.of(505), Closes.EITHER),
-      null,
+      new Expectation(Set.of(400), Closes.NO),
       new Expectation(Set.of(400), Closes.EITHER),
       -1L,
       false),
@@ -134,8 +134,9 @@ enum Backend {
     return this == NETTY;
   }
 
-  /// A request line the codec cannot parse: the README documents it for Netty alone (400,
-  /// `Connection: close`, then the close); `null` elsewhere, so the case is skipped there.
+  /// A request line the server cannot parse: the README documents it for Netty and Helidon (400,
+  /// `Connection: close`, then the close); `null` for the JDK and Jetty, so the case is skipped
+  /// there.
   Expectation malformed() {
     return malformed;
   }
@@ -149,7 +150,8 @@ enum Backend {
   /// An absolute-form target, `GET http://host:port/ping HTTP/1.1` with a matching `Host`:
   /// refused 400 by Netty, reduced to its path and served by the JDK and Jetty
   /// (Jetty additionally refuses a `Host` naming another authority, so the probe's matches);
-  /// not documented for Helidon, so `null` there.
+  /// refused with the controller's JSON 400 on Helidon, which hands the target on as received
+  /// and keeps the connection open.
   Expectation absoluteForm() {
     return absoluteForm;
   }

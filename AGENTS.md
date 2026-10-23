@@ -167,7 +167,7 @@ because since value decoding landed the parser is no longer just a splitter. See
 
 ### http-servers-helidon — Helidon backend (`software.sava.http_servers.helidon`)
 
-Helidon WebServer 4.5.5 behind the shared `HandlerMap`, reached from one catch-all route so
+Helidon WebServer 4.5.6 behind the shared `HandlerMap`, reached from one catch-all route so
 Helidon's own routing never decides a match. Versions come from `solana-version-catalog`
 (25.30.21 and later).
 
