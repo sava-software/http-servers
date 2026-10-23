@@ -1,5 +1,22 @@
 # Changelog
 
+## [25.4.3](https://github.com/sava-software/http-servers/compare/25.4.2...25.4.3) (2026-10-23)
+
+
+### Features
+
+* **core:** add HttpResponse.checkFinalStatus ([6cb1814](https://github.com/sava-software/http-servers/commit/6cb181407ef651c86ceb78251926414d2f7b89a6))
+
+
+### Bug Fixes
+
+* **cors:** route an OPTIONS without an Origin as the request it is ([3b01eb2](https://github.com/sava-software/http-servers/commit/3b01eb245ef0589a6d9594d3609ef2a3a12dbd17))
+* **helidon:** answer a handler's Error with the JSON 500 ([00d0f2b](https://github.com/sava-software/http-servers/commit/00d0f2b5949b62a447416ca56ed610386dd563af))
+* **helidon:** document and handle malformed request lines and absolute-form targets ([ce986d4](https://github.com/sava-software/http-servers/commit/ce986d42638f93711b1bb63c46b958b10b3a09e0))
+* **jdk:** answer a handler's Error, and keep its headers off the 500 ([a4c5ba3](https://github.com/sava-software/http-servers/commit/a4c5ba387db97527c321a2d194411a727a1db474))
+* **jetty:** announce the close when answering before the body arrives ([9689ece](https://github.com/sava-software/http-servers/commit/9689ecebd0399eb33ad0bc49cd07814cb9571569))
+* **netty:** answer an Error from a blocking route ([505ecb1](https://github.com/sava-software/http-servers/commit/505ecb19ef8d06c0a63d2b0cbfa8e9899df3196f))
+
 ## [25.4.2](https://github.com/sava-software/http-servers/compare/25.4.1...25.4.2) (2026-10-11)
 
 
