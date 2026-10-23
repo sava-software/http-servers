@@ -17,14 +17,13 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 ## Quality gate & mutation ratchet
 
 <!-- hardening-template block:start -->
-- Work with the module's `test` task. The mutation suites are a final gate, run once
-  per unpushed range when the work is complete and reviewed, before the push: each
-  `pitest<Suite>` whose mutated code the range can reach, including suites in
-  dependent modules, plus `mutationOwnershipAudit` when production classes or
-  target/exclusion rules changed. Never per commit, amend or review round; a change
-  the gate forces goes back through review as a delta. `hardeningCertify` (or
-  `:hardeningCertifyAll`) and `fuzzAll` are the pre-release checks this repo's notes
-  assign an owner to.
+- Work with the module's `test` task. The mutation suites are a final gate, run once per
+  unpushed range when the work is complete and reviewed, before the push: each
+  `pitest<Suite>` whose mutated code the range can reach, including suites in dependent
+  modules, plus `mutationOwnershipAudit` when production classes or target/exclusion
+  rules changed. Never per commit, amend or review round; a change the gate forces goes
+  back through review as a delta. `hardeningCertify` (or `:hardeningCertifyAll`) and
+  `fuzzAll` are the pre-release checks this repo's notes assign an owner to.
 - Test-only edits owe the suites whose mutated code those tests exercise; when scope
   is unclear, run `./gradlew qualityGate` from the Gradle root. Doc and comment
   edits owe no suite; a build-script edit only when it changes what
@@ -46,13 +45,12 @@ the `hardening {}` block in each module's `build.gradle.kts`.
   oracle independent of the implementation before writing the killing test. If they
   contradict current behaviour, prove the bug with a failing regression test first,
   then fix production; never lock a bug in with a passing assertion.
-- Write records only through the installed writer tasks: `BaselineUnion` adds
-  reviewed rows, `BaselineRetag` refreshes `# line` metadata, `BaselinePrune` deletes
-  only after two matching fresh history-free previews, `BaselineUpdate` is for a
-  first seed or a reviewed complete rewrite, and `pitest<Suite>BaselineRebase`
-  follows a PIT, PIT-plugin/tool-artifact, ArcMutate-base, or certificate change.
-  Never hand-edit baseline
-  rows or provenance stamps.
+- Write records only through the installed writer tasks: `BaselineUnion` adds reviewed
+  rows, `BaselineRetag` refreshes `# line` metadata, `BaselinePrune` deletes only after
+  two matching fresh history-free previews, `BaselineUpdate` is for a first seed or a
+  reviewed complete rewrite, and `pitest<Suite>BaselineRebase` follows a PIT,
+  PIT-plugin/tool-artifact, ArcMutate-base, or certificate change. Never hand-edit
+  baseline rows or provenance stamps.
 - Baseline keys are line-less (`class,method,mutator,STATUS`); `# line` tags are
   review metadata that belong to their row: `BaselineRetag` refreshes them, a hand
   edit is a hand-edited row. Identical rows are sibling mutants and the comparison
@@ -69,6 +67,8 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 - Tests are deterministic: fixed seeds, no sleeps, a clock with a non-zero origin,
   stubs that return distinguishable non-default values, and the subject built inside
   the test body. Exclusions must cover the test source set, not a naming convention.
+- Git-ignored scratch sources (`Integ.java` drivers) never sit in a hardened project's
+  `main` or `test` source set; keep them in a git-ignored `scratch` source set instead.
 - Verify by the absence of failures: trust the exit code and the `.running`
   sentinel, not a summary. `MINION_DIED` and `RUN_ERROR` are not results; re-run once
   on a quiet machine. A suite that got faster without getting narrower is a bug report.
