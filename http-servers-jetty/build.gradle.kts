@@ -5,10 +5,8 @@ plugins {
 dependencies {
   project(":http-servers-core")
   // https://mvnrepository.com/artifact/org.slf4j/slf4j-jdk14
+  // A default SLF4J binding an application can override; a 'requires' in module-info would force it.
   runtimeOnly("org.slf4j:slf4j-jdk14")
-  runtimeOnly("org.eclipse.jetty.compression:jetty-compression-gzip")
-//  runtimeOnly("org.eclipse.jetty.compression:jetty-compression-brotli")
-//  runtimeOnly("org.eclipse.jetty.compression:jetty-compression-zstandard")
 }
 
 testModuleInfo {

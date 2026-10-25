@@ -7,9 +7,11 @@ module software.sava.http_servers.jetty {
   requires transitive software.sava.http_servers.core;
 
   requires org.eclipse.jetty.compression.server;
-  requires static org.eclipse.jetty.compression.gzip;
-//  requires static org.eclipse.jetty.compression.brotli;
-//  requires static org.eclipse.jetty.compression.zstandard;
+  // Loaded by ServiceLoader, never referenced: a runtime requires keeps gzip in every jlink
+  // image of a consumer, which service binding used to do (sava-build 21.7.0 binds none).
+  requires /*runtime*/ org.eclipse.jetty.compression.gzip;
+//  requires /*runtime*/ org.eclipse.jetty.compression.brotli;
+//  requires /*runtime*/ org.eclipse.jetty.compression.zstandard;
   requires org.eclipse.jetty.http;
   requires org.eclipse.jetty.http2.server;
   requires org.eclipse.jetty.io;
