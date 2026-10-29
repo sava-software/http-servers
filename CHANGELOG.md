@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.4.4](https://github.com/sava-software/http-servers/compare/25.4.3...25.4.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* **jetty:** require the gzip provider at run time ([ab14da3](https://github.com/sava-software/http-servers/commit/ab14da3cea3aeee28a2b6f317b41d2a14953a580))
+
 ## [25.4.3](https://github.com/sava-software/http-servers/compare/25.4.2...25.4.3) (2026-10-23)
 
 
