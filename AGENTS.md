@@ -229,8 +229,12 @@ in request order: a refusal resets the codec (Netty's `HttpExpectationFailedEven
 right only while the codec still stands on that head, so the decision cannot wait for the
 request's turn even though its answer does. The aggregator keeps the `100 Continue` and the
 oversized-body `413`, both ordered behind the gate by construction, and no `IdleStateHandler` or
-`netty-handler` dependency is needed. Versions come from `solana-version-catalog` (25.30.21 and
-later).
+`netty-handler` dependency is needed, though `netty-handler` itself stays on the class path,
+since `io.netty.codec.http` requires it outright. `netty-codec-compression` is excluded on the
+`netty-codec-http` edge (`io.netty.codec.http` only `requires static` it, and the adapter never
+puts `HttpContentCompressor`, `HttpContentDecompressor` or a WebSocket deflate extension in a
+pipeline); a change that does needs the exclusion in `build.gradle.kts` lifted first. Versions
+come from `solana-version-catalog` (25.30.21 and later).
 
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
