@@ -337,6 +337,9 @@ savaGithubPackagesPassword=GITHUB_TOKEN
 ```
 
 Mutation and fuzz testing conventions for this repository are documented in [AGENTS.md](AGENTS.md).
+Every dependency the build resolves is verified against the signatures and checksums policy in
+`gradle/verification-metadata.xml` (sava-build's README, "Verifying sava artifacts"); AGENTS.md
+says how a dependency or policy change is checked and recorded.
 
 ## Soak testing
 

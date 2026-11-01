@@ -12,6 +12,9 @@ pluginManagement {
   // bypasses plugin markers, which the test repo does not contain. When done, drop
   // the property: the unset path is the normal published resolution from GitHub
   // Packages below.
+  // A run with the property also needs --dependency-verification lenient on its command
+  // line: the test publication is unsigned, and the committed policy in
+  // gradle/verification-metadata.xml refuses it when the plugins block resolves it.
   val savaBuildLocalRepo = providers.gradleProperty("savaBuildLocalRepo")
     .orNull?.takeIf { it.isNotBlank() }
   if (savaBuildLocalRepo != null) {
@@ -45,8 +48,8 @@ pluginManagement {
 }
 
 plugins {
-  id("software.sava.build") version "21.7.1"
-  id("software.sava.build.feature.jdk-provisioning") version "21.7.1"
+  id("software.sava.build") version "21.8.2"
+  id("software.sava.build.feature.jdk-provisioning") version "21.8.2"
 }
 
 javaModules {

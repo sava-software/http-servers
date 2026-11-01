@@ -14,6 +14,20 @@ shared `software.sava.build` Gradle plugin (same plugin family as the `sava` rep
 surfaces additionally carry PIT mutation suites and Jazzer fuzz harnesses, configured through
 the `hardening {}` block in each module's `build.gradle.kts`.
 
+Every dependency is verified against `gradle/verification-metadata.xml`, the signatures and
+checksums policy sava-build's `verificationPolicy` task guards as part of `check`; the rules and
+the update procedure are sava-build's README, "Verifying sava artifacts". Check a dependency or
+policy change with `./gradlew --no-configuration-cache check resolveVerificationTools`: a reused
+configuration-cache entry resolves nothing and so verifies nothing. A refusal names the
+artifact; the README's four cases, and for a listed key its section's heading in
+`gradle/verification/version-scoped-keys.txt`, say what to do, and the files are only ever edited
+in their own shape: a key's version and its list line move together. Helidon's signer is
+listed, so a Helidon bump moves its fourteen group-and-version rules with the line, and can
+also move the Jersey, EE4J, OCI and Coherence BOM rules its dependency POM imports, as a Jetty
+bump can the Infinispan and testcontainers ones Jetty's parent imports. A
+`-PsavaBuildLocalRepo` build needs `--dependency-verification lenient`, since the test repo's
+artifacts are unsigned.
+
 ## Quality gate & mutation ratchet
 
 <!-- hardening-template block:start -->

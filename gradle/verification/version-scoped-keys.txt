@@ -1,0 +1,48 @@
+# Signing keys that ../verification-metadata.xml trusts only for exact versions.
+# The verificationPolicy check (part of check) fails when a rule for one of these keys has
+# no version or is a regex, when a key that is not listed here has one, and when a listed
+# key is used by no rule any more. One key per line:
+# <fingerprint> <why it stays version-scoped>
+#
+# Not listed, by decision: five keys are trusted for their groups or modules with no version
+# on the corroboration of gradle/gradle's own policy alone, no publisher source having been
+# found for them (the fleet's audit of 2026-10-31, re-read here on 2026-11-01): Aleksey
+# Shipilev's 019082BC00E0324E2AEF4CF00D3B328562A119A7 (org.openjdk.jmh), the protobuf release
+# key 1A55F091AD28C07F831FA44D7905DE25C78AD456 (com.google.protobuf, met through the
+# protobuf-bom Helidon's dependency POM imports), the grpc-java team's
+# B02335AA54CCF21E52BBF9ABD9C565AA72BA2FDD (io.grpc, grpc-bom likewise), the javaparser key
+# 6DE9B8077FBB2F8A019F4904BD17A565509DEE20 and the Spock robot's
+# 76E94E8FF0AB5AF3B6F8366972FEFD1572EB75E1 (spock-bom). Overturn it deliberately: a rule's
+# version and the key's line here move together, then run check.
+
+# Tool signers not independently authenticated: no publisher-published fingerprint,
+# GitHub-registered key or verified identity was found. A tool bump moves the version
+# after the release is checked.
+18CD85CBC5C1DB1684C5E59FA8E3B39F19E1CCE7 PIT signer, publisher identity unauthenticated
+AC1A3DD4471FE0F6EA28300F1BA25353622A192B ArcMutate signer, publisher identity unauthenticated
+
+# Library signers that neither a publisher source nor gradle/gradle's policy authenticates.
+# A dependency bump under one of these moves the version after the release is checked
+# against the publisher. Four of the six BOM signers below (Jersey, EE4J, OCI, Coherence) enter
+# the graph only as POM imports of Helidon's dependency POM and move with Helidon; Infinispan's
+# and the testcontainers-bom signer's come through Jetty's parent POM and move with Jetty.
+F6A991654E702159FA9D613312D92BE9BC1771B4 Helidon Project <info@helidon.io>: no fingerprint published; the release workflow imports the key from a secret and names no id
+0B743A794876D3C78AB542A118D239B1CBCD2236 Eclipse Jersey <jersey-dev@eclipse.org>, signing subkey of 2EABB8F15F15E18885312232372703E4D5313120: no publisher source found (jersey-bom)
+AA70C7C433D501636392EC02153E7A3C2B4E5118 Eclipse EE4J Project <ee4j-dev@eclipse.org>, signing subkey of C3F530A8FDE7926E0F6C71475796E91EE6619C69: no publisher source found (org.eclipse.ee4j:project)
+F5FEBA84EB26C56457B2CF819E31AB27445478DB Infinispan <infinispan-maven@infinispan.org>: the project's build names only the 64-bit id 9E31AB27445478DB (infinispan-bom)
+6E7F910017655622A899639EE7D88DB8427DE651 Eddu Melendez's testcontainers-bom signer: not his GitHub-registered key, and gradle/gradle trusts another key for org.testcontainers
+6ED2B93D4C6575C4AB7E489059CF86E8D2B64647 Oracle ogho_mc_grp <ogho_mc_grp@oracle.com> (oci-java-sdk-bom): no publisher source found
+B30F9BE9DFC171F76F9160E55E3BA16420525DB2 Aleksandar Seovic's coherence-bom signer, a 2013 rsa2048 key (keys.openpgp.org carries its extension to 2027-09-25, keyserver.ubuntu.com's copy still shows it expired in 2022): no publisher source found
+
+# Keys that must not vouch for new releases: revoked keys, expired keys, DSA-1024 keys (about
+# 80 bits of security, whoever still signs with them) and retired release managers' keys that
+# signed old releases in the graph. A new version under any of them is a reason to stop.
+1BD97A6A154E7810EE0BC832E2F38302C8075E3D Gradle Inc. publishing key, revoked 2026-08-08 as superseded (gradle.org/keys); signed foojay-resolver 1.0.0 while active
+0CDE80149711EB46DFF17AE421A24B3F8B0F594A expired key
+808D78B17A5A2D7C3668E31FBFFC9B54721244AD expired key
+2E3A1AFFE42B5F53AF19F780BCF4173966770193 expired key
+C8D37E9675158FF5B29B6D6452FC3551DA8DC57E Oracle Maven Release Key 3, expired 2026-10-01; signed ojdbc-bom 23.26.1.0.0 while active (gradle/gradle trusts it for com.mysql only)
+44FBDBBC1A00FE414F1C1873586654072EAD6677 DSA-1024 key
+517B94F8D0A46317A28D8AB30DA8A5EC02D11EAD DSA-1024 key
+41A1A08C62FCA78B79D3081164A16FAAEC16A4BE release-manager key of an old release
+694621A7227D8D5289699830ABE9F3126BB741C1 release-manager key of an old release
