@@ -46,8 +46,10 @@ public final class SvmExactSettler {
     this.settlementCache = settlementCache;
   }
 
-  /// Convenience constructor wiring a {@link SolanaRpcClient} backed {@link TransactionSubmitter} with
-  /// the {@code confirmed} commitment level and sensible polling defaults.
+  /// Convenience constructor wiring a {@link SolanaRpcClient} backed {@link TransactionSubmitter} that
+  /// confirms at the {@code confirmed} commitment level with sensible polling defaults. The
+  /// submission's preflight runs at {@code rpcClient}'s default commitment, which sava-rpc sets to
+  /// {@code finalized} for a client built without one.
   public SvmExactSettler(final SolanaAccounts accounts,
                          final Signer feePayer,
                          final SolanaRpcClient rpcClient) {
