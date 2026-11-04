@@ -213,7 +213,7 @@ at all.
 
 ### http-servers-netty — Netty backend (`software.sava.http_servers.netty`)
 
-Netty 4.2.19.Final behind the shared `HandlerMap`. Each connection's pipeline is `HttpServerCodec` →
+Netty 4.2.20.Final behind the shared `HandlerMap`. Each connection's pipeline is `HttpServerCodec` →
 `NettyRequestGate` → `NettyRequestAggregator` → `NettyController`: the gate owns response
 ordering, connection persistence and the idle timeout (one request in flight per connection,
 reads paused while a complete request awaits its answer, `Connection: close` decided from both
