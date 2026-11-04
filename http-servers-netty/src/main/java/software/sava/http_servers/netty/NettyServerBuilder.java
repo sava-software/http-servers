@@ -14,10 +14,9 @@ import static java.lang.System.Logger.Level.ERROR;
 import static java.util.Objects.requireNonNull;
 
 /// Builds a server over Netty 4.2 (NIO transport, HTTP/1.x codec). The package is not
-/// exported, so consumers reach this builder only through `HttpServerBuilderFactory` and
-/// the three tuning knobs below are fixed at their defaults for them — like the JDK and
-/// Helidon backends, which expose no knobs either; the wider constructor exists for this
-/// package's own tests.
+/// exported, so consumers reach this builder through `HttpServerBuilderFactory`. Factory
+/// builders capture the gzip compression property at construction; wider constructors
+/// keep this package's tests independent of process-wide configuration.
 final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, NettyHttpServer> {
 
   /// The largest request body the aggregator assembles before answering 413: 64 MiB —
@@ -36,12 +35,20 @@ final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, Netty
   private final int maxContentLength;
   private final int ioThreads;
   private final long idleTimeoutNanos;
+  private final boolean compression;
+  static final String COMPRESSION_PROPERTY = "software.sava.http_servers.netty.compression";
 
   /// `idleTimeout` must be positive and expressible in nanoseconds (about 292 years): there is
   /// no "disabled" value, a zero or negative timeout would close every connection the instant
   /// it was accepted, and an absent or out-of-range one would otherwise fail only inside
   /// `createServer` — all are refused here, at construction.
   NettyServerBuilder(final int maxContentLength, final int ioThreads, final Duration idleTimeout) {
+    this(maxContentLength, ioThreads, idleTimeout, true);
+  }
+
+  NettyServerBuilder(final int maxContentLength, final int ioThreads, final Duration idleTimeout,
+                     final boolean compression) {
+    this.compression = compression;
     if (!requireNonNull(idleTimeout, "idleTimeout").isPositive()) {
       throw new IllegalArgumentException("idleTimeout must be positive: " + idleTimeout);
     }
@@ -51,7 +58,22 @@ final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, Netty
   }
 
   NettyServerBuilder() {
-    this(DEFAULT_MAX_CONTENT_LENGTH, DEFAULT_IO_THREADS, DEFAULT_IDLE_TIMEOUT);
+    this(DEFAULT_MAX_CONTENT_LENGTH, DEFAULT_IO_THREADS, DEFAULT_IDLE_TIMEOUT,
+        configuredCompression());
+  }
+
+  private static boolean configuredCompression() {
+    final var value = System.getProperty(COMPRESSION_PROPERTY);
+    if (value == null) {
+      return true;
+    }
+    if ("true".equalsIgnoreCase(value)) {
+      return true;
+    }
+    if ("false".equalsIgnoreCase(value)) {
+      return false;
+    }
+    throw new IllegalArgumentException(COMPRESSION_PROPERTY + " must be true or false: " + value);
   }
 
   @Override
@@ -74,7 +96,8 @@ final class NettyServerBuilder extends BaseHttpServerBuilder<NettyHandler, Netty
 
   @Override
   protected void setController(final NettyHttpServer server, final HandlerMap<NettyHandler> handlerMap) {
-    server.childHandler(new NettyChannelInitializer(handlerMap, server.executor(), maxContentLength, idleTimeoutNanos, System::nanoTime));
+    server.childHandler(new NettyChannelInitializer(handlerMap, server.executor(), maxContentLength, idleTimeoutNanos,
+        System::nanoTime, compression));
   }
 
   @Override

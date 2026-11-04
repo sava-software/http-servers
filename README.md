@@ -320,6 +320,20 @@ wiring.queryNonBlockingGet(Api.ADMIN, "/shutdown", adminHandler);  // filtered o
 An empty set excludes the whole group. `wireIncludedHandlers` inverts this into an allowlist, and
 `includePath` / `excludePath` answer the same question directly.
 
+## Netty response compression
+
+The Netty backend serves HTTP/1 over Java NIO. Gzip response compression is enabled
+for eligible responses when the client accepts it, with a 32-byte minimum. It preserves
+existing `Vary` values and adds `Accept-Encoding` for both encoded and identity variants.
+Already encoded bodies, media, event streams, multipart and ranged responses,
+non-success responses and bodyless statuses are not compressed. A strong ETag becomes
+weak on the compressed variant.
+
+Set `-Dsoftware.sava.http_servers.netty.compression=false` before constructing the server
+builder to disable compression. The property accepts `true` or `false` without regard
+to case; an invalid value fails builder construction. Each builder captures its value
+when created.
+
 ## Build
 
 [Generate a classic token](https://github.com/settings/tokens) with the `read:packages` scope needed

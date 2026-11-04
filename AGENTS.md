@@ -214,8 +214,8 @@ at all.
 ### http-servers-netty — Netty backend (`software.sava.http_servers.netty`)
 
 Netty 4.2.20.Final behind the shared `HandlerMap`. Each connection's pipeline is `HttpServerCodec` →
-`NettyRequestGate` → `NettyRequestAggregator` → `NettyController`: the gate owns response
-ordering, connection persistence and the idle timeout (one request in flight per connection,
+optional `NettyContentCompressor` → `NettyRequestGate` → `NettyRequestAggregator` →
+`NettyController`: the gate owns response ordering, connection persistence and the idle timeout (one request in flight per connection,
 reads paused while a complete request awaits its answer, `Connection: close` decided from both
 the request and the response — framed for the request's version, or as HTTP/1.1 for a head the
 codec could not parse, so the close its `400` carries is signalled whatever version the codec
@@ -229,28 +229,31 @@ in request order: a refusal resets the codec (Netty's `HttpExpectationFailedEven
 right only while the codec still stands on that head, so the decision cannot wait for the
 request's turn even though its answer does. The aggregator keeps the `100 Continue` and the
 oversized-body `413`, both ordered behind the gate by construction, and no `IdleStateHandler` or
-`netty-handler` dependency is needed. `netty-codec-compression` stays on the class path although
-`io.netty.codec.http` only `requires static` it and the adapter puts no `HttpContentCompressor` in
-a pipeline yet: response compression to match the Jetty backend's gzip, which vault-stat-service
-relies on, needs it, so it is not excluded (2026-11-01). The jar on the path is not enough on a
-module path (the soak run's `-m` launch, a consumer's jlink image): the change that adds
-`HttpContentCompressor` also adds `requires io.netty.codec.compression` to this module's
-`module-info.java`, as the Jetty adapter requires its gzip provider at run time. Versions come from
+`netty-handler` dependency is needed. Gzip negotiation uses `NettyContentCompressor`
+before the gate, so the final-response promise covers every compressed write and trailer.
+The module explicitly requires `io.netty.codec.compression` for module-path execution.
+`Vary: Accept-Encoding` applies to identity and encoded variants; strong ETags are weakened
+only for an encoded variant. The compressor uses a 32-byte minimum, preserves already encoded,
+media, archive, event-stream, multipart and ranged responses, and excludes non-success and
+bodyless statuses. The `software.sava.http_servers.netty.compression` JVM property defaults
+to true and is captured at builder construction. Versions come from
 `solana-version-catalog` (25.30.21 and later).
 
 - `./gradlew :http-servers-netty:pitestDispatch` — PIT over the whole `netty` package (wildcard)
   against `netty.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER` because
   `HttpHeaders.set`, `ChannelPipeline.addLast`, `ChannelConfig.setAutoRead` and the
-  `ServerBootstrap` chain all return their receiver. 188 mutants since the pre-flight conditionals
-  moved to core's `CorsRequest` on 2026-10-14, **100% killed**, no accepted
-  baseline file and an empty, armed `dispatch-timeouts.csv` — keep it that way. The covering
+  `ServerBootstrap` chain all return their receiver. The suite has no accepted baseline file
+  and an empty, armed `dispatch-timeouts.csv` — keep both that way. The covering
   tests are real socket round trips in `NettyConformanceTest` and `NettyPostHandlerTest`, plus
   `NettyPipelineTest`, which drives the real channel initializer on an `EmbeddedChannel` so
   ordering, flow control, reference counts, framing, the expectation refusals and the idle
   timeout are asserted in process — the last on a fake clock that is the embedded loop's ticker (origin 10^12 ns) and,
   offset to a negative origin as `System.nanoTime` may be, the gate's clock, advanced by the
   test rather than waited on; the shipped 30 s default is what those cases measure against,
-  and is pinned by name in the socket suite.
+  and is pinned by name in the socket suite. `NettyCompressionTest` additionally pins gzip
+  negotiation, exclusions, full and streaming framing, Vary/ETag semantics, interim/refusal
+  ordering, final-write completion and unsolicited error responses; `NettyConfigurationTest`
+  pins factory compression defaults, valid/invalid values and configuration snapshotting.
 
 The former `# backpressure` accepted row (`NettyController.channelRead0`'s read pause) was
 retired through the Prune protocol when ordering moved into `NettyRequestGate`, where the same
