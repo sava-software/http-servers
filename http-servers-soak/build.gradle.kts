@@ -17,12 +17,14 @@ val soakModulePath = tasks.register("soakModulePath") {
   description = "Writes the runtime module path and the toolchain java launcher under build/soak for soak.sh."
   val runtimeClasspath = sourceSets.main.get().runtimeClasspath
   val launcher = javaToolchains.launcherFor(java.toolchain)
+    .map { it.executablePath.asFile.absolutePath }
   val modulePathFile = layout.buildDirectory.file("soak/module-path.txt")
   val javaFile = layout.buildDirectory.file("soak/java.txt")
   inputs.files(runtimeClasspath)
+  inputs.property("launcher", launcher)
   outputs.files(modulePathFile, javaFile)
   doLast {
     modulePathFile.get().asFile.writeText(runtimeClasspath.files.joinToString(File.pathSeparator) { it.absolutePath })
-    javaFile.get().asFile.writeText(launcher.get().executablePath.asFile.absolutePath)
+    javaFile.get().asFile.writeText(launcher.get())
   }
 }
