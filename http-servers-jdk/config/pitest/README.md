@@ -189,3 +189,15 @@ the requested `localhost` address, so binding the wildcard instead dodges
 the conflict and the expected bind failure never happens. The occupied
 port is the second observer the acceptance said did not exist; the
 baseline is now empty — keep it that way.
+
+The blank-host direction (the `isBlank` conditional on line 37 forced
+false, which hands a blank name to `new InetSocketAddress(host, port)`) is
+killed by `theServerBindsTheRequestedHost`, which reads the bound
+address of `null`, `""` and `"  "` and asserts the wildcard. `""` comes
+first because it resolves to loopback with no lookup and fails at once.
+Until 2026-11-10 the only blank case was `"  "` inside
+`absentHostBindsAllInterfaces`, whose round trip over 127.0.0.1 cannot
+see a loopback bind: that mutant was killed only when the OS resolver
+failed `"  "` quickly, and read `TIMED_OUT` when it did not. No covering
+test hands `"  "` to the resolver under the mutant now, and a `TIMED_OUT`
+on that line is a regression, not a timeouts-file member.

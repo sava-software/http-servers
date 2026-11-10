@@ -461,7 +461,14 @@ previews with the identical single-row candidate multiset, then
   `blockingHandlersRunOnTheProvidedExecutor` through a recording executor.
 - The host guard in `NettyServerBuilder.initRestServer`, both directions, by
   `theServerBindsTheRequestedHost` — a synchronous read of the unstarted server's
-  address, no socket — and again by `startOnAnOccupiedPortThrows`.
+  address, no socket — and again by `startOnAnOccupiedPortThrows`. Its blank cases
+  run `null`, `""`, `"  "` in that order: with the `isBlank` check forced false,
+  `""` resolves to loopback with no lookup and fails the wildcard assertion at once.
+  Until 2026-11-10 `"  "` was the only blank case here and also ran in
+  `absentHostBindsAllInterfaces`, and whether the OS resolver failed it fast or slow
+  decided `KILLED` or `TIMED_OUT`. The round trip now runs `null` only, so no
+  covering test hands `"  "` to the resolver under the mutant, and a
+  `TIMED_OUT` on that line is a regression, not a timeouts-file member.
 - The dispatch guard's log by the two `throwing*HandlerAnswers500` cases; the
   builder's create-failure log by `invalidPortPropagatesTheFailure`.
 - The bodyless-status branch of `ResponseUtil.response` in both directions: the
@@ -494,8 +501,8 @@ threshold, and real wall-clock time by construction (a
 200 ms knob waited out for an EOF), not work. No coverage-phase advisory has fired in
 any of them, but that case is the first thing to look at if this suite ever shows a
 load-dependent `TIMED_OUT`. History: before it, the advisory named
-`absentHostBindsAllInterfaces` at 246–251 ms (two servers — a `null` host and a blank
-one — and two `HttpClient`s), which remains the second candidate.
+`absentHostBindsAllInterfaces` at 246–251 ms, when it started two servers (a `null`
+host and a blank one) and two `HttpClient`s; since 2026-11-10 it starts one.
 
 ## Audited timeouts (`dispatch-timeouts.csv`)
 

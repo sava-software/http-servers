@@ -380,18 +380,21 @@ final class NettyConformanceTest {
     }
   }
 
+  /// An absent host serves end to end. Blank hosts are left to
+  /// `theServerBindsTheRequestedHost`: a round trip over 127.0.0.1 cannot tell a wildcard bind
+  /// from a loopback one, so under the blank-check mutant only a resolver lookup of the blank
+  /// name could fail it, and that lookup's latency made the mutant read KILLED or TIMED_OUT at
+  /// random.
   @Test
   void absentHostBindsAllInterfaces() throws Exception {
-    for (final String host : new String[]{null, "  "}) {
-      final var builder = new NettyBuilderFactory().createBuilder();
-      builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-      final int port = freePort();
-      final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, port);
-      server.start();
-      started.add(server);
-      try (final var client = HttpClient.newHttpClient()) {
-        assertEquals("w", get(client, port, "/w").body(), "host=" + host);
-      }
+    final var builder = new NettyBuilderFactory().createBuilder();
+    builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+    final int port = freePort();
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, port);
+    server.start();
+    started.add(server);
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("w", get(client, port, "/w").body());
     }
   }
 
@@ -934,18 +937,21 @@ final class NettyConformanceTest {
   }
 
   /// The listener must bind the host it was given and only fall back to the wildcard for an
-  /// absent one — read synchronously off the unstarted server, with no socket, no clock and
-  /// nothing to clean up (the oracle that cannot time out; `startOnAnOccupiedPortThrows`
-  /// reaches the same property through a bind conflict).
+  /// absent or blank one — read synchronously off the unstarted server, with no socket, no clock
+  /// and nothing to clean up (`startOnAnOccupiedPortThrows` reaches the same property through a
+  /// bind conflict). `""` comes before `"  "`: if the blank check is dropped, `""` resolves to
+  /// loopback with no lookup and fails the wildcard assertion at once, so no run ever hands
+  /// `"  "` to the OS resolver, whose latency once made that mutant read KILLED or TIMED_OUT at
+  /// random.
   @Test
   void theServerBindsTheRequestedHost() {
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       final var named = new NettyServerBuilder().initRestServer(executor, "localhost", 0).address();
       assertEquals("localhost", named.getHostString(),
           "initRestServer must apply the requested host");
-      for (final String host : new String[]{null, "  "}) {
+      for (final String host : new String[]{null, "", "  "}) {
         final var wildcard = new NettyServerBuilder().initRestServer(executor, host, 0).address();
-        assertTrue(wildcard.getAddress().isAnyLocalAddress(), "host=" + host + " must bind the wildcard");
+        assertTrue(wildcard.getAddress().isAnyLocalAddress(), "host=\"" + host + "\" must bind the wildcard");
       }
     }
   }

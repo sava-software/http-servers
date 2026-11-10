@@ -509,21 +509,52 @@ final class JdkConformanceTest {
         "the configured executor must dispatch exchanges");
   }
 
+  /// An absent host serves end to end. Blank hosts are left to
+  /// `theServerBindsTheRequestedHost`: a round trip over 127.0.0.1 cannot tell a wildcard bind
+  /// from a loopback one, so under the blank-check mutant only a resolver lookup of the blank
+  /// name could fail it, and that lookup's latency made the mutant read KILLED or TIMED_OUT at
+  /// random.
   @Test
   void absentHostBindsAllInterfaces() throws Exception {
-    for (final String host : new String[]{null, "  "}) {
-      final var builder = new JDKHttpServerBuilderFactory().createBuilder();
-      builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-      final int port = freePort();
-      builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, port).start();
-      try (final var client = HttpClient.newHttpClient()) {
-        assertEquals("w", client.send(
-            HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/w"))
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build(),
-            BodyHandlers.ofString()
-        ).body(), "host=" + host);
+    final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+    builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+    final int port = freePort();
+    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, port).start();
+    try (final var client = HttpClient.newHttpClient()) {
+      assertEquals("w", client.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/w"))
+              .timeout(Duration.ofSeconds(10))
+              .GET()
+              .build(),
+          BodyHandlers.ofString()
+      ).body());
+    }
+  }
+
+  /// The listener binds the host it was given and falls back to the wildcard only for an absent
+  /// or blank one, read off the bound socket with no request and no clock. `""` comes before
+  /// `"  "`: if the blank check is dropped, `""` resolves to loopback with no lookup and fails the
+  /// wildcard assertion at once, so no run ever hands `"  "` to the OS resolver. Each server is
+  /// started before it is stopped, because only the dispatcher thread closes the `Selector` the
+  /// constructor opens, so an unstarted server would leak its descriptors.
+  @Test
+  void theServerBindsTheRequestedHost() {
+    final var named = new JdkServerBuilder().initRestServer(Runnable::run, "localhost", 0);
+    try {
+      named.start();
+      assertTrue(named.getAddress().getAddress().isLoopbackAddress(),
+          "initRestServer must apply the requested host: " + named.getAddress());
+    } finally {
+      named.stop(0);
+    }
+    for (final String host : new String[]{null, "", "  "}) {
+      final var wildcard = new JdkServerBuilder().initRestServer(Runnable::run, host, 0);
+      try {
+        wildcard.start();
+        assertTrue(wildcard.getAddress().getAddress().isAnyLocalAddress(),
+            "host=\"" + host + "\" must bind the wildcard: " + wildcard.getAddress());
+      } finally {
+        wildcard.stop(0);
       }
     }
   }
