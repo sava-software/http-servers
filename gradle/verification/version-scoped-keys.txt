@@ -4,11 +4,10 @@
 # key is used by no rule any more. One key per line:
 # <fingerprint> <why it stays version-scoped>
 #
-# Not listed, by decision: five keys are trusted for their groups or modules with no version
+# Not listed, by decision: four keys are trusted for their groups or modules with no version
 # on the corroboration of gradle/gradle's own policy alone, no publisher source having been
-# found for them (the fleet's audit of 2026-10-31, re-read here on 2026-11-01): Aleksey
-# Shipilev's 019082BC00E0324E2AEF4CF00D3B328562A119A7 (org.openjdk.jmh), the protobuf release
-# key 1A55F091AD28C07F831FA44D7905DE25C78AD456 (com.google.protobuf, met through the
+# found for them (the fleet's audit of 2026-10-31, re-read here on 2026-11-01): the protobuf
+# release key 1A55F091AD28C07F831FA44D7905DE25C78AD456 (com.google.protobuf, met through the
 # protobuf-bom Helidon's dependency POM imports), the grpc-java team's
 # B02335AA54CCF21E52BBF9ABD9C565AA72BA2FDD (io.grpc, grpc-bom likewise), the javaparser key
 # 6DE9B8077FBB2F8A019F4904BD17A565509DEE20 and the Spock robot's
@@ -38,11 +37,8 @@ B30F9BE9DFC171F76F9160E55E3BA16420525DB2 Aleksandar Seovic's coherence-bom signe
 # 80 bits of security, whoever still signs with them) and retired release managers' keys that
 # signed old releases in the graph. A new version under any of them is a reason to stop.
 1BD97A6A154E7810EE0BC832E2F38302C8075E3D Gradle Inc. publishing key, revoked 2026-08-08 as superseded (gradle.org/keys); signed foojay-resolver 1.0.0 while active
-0CDE80149711EB46DFF17AE421A24B3F8B0F594A expired key
-808D78B17A5A2D7C3668E31FBFFC9B54721244AD expired key
 2E3A1AFFE42B5F53AF19F780BCF4173966770193 expired key
 C8D37E9675158FF5B29B6D6452FC3551DA8DC57E Oracle Maven Release Key 3, expired 2026-10-01; signed ojdbc-bom 23.26.1.0.0 while active (gradle/gradle trusts it for com.mysql only)
 44FBDBBC1A00FE414F1C1873586654072EAD6677 DSA-1024 key
 517B94F8D0A46317A28D8AB30DA8A5EC02D11EAD DSA-1024 key
-41A1A08C62FCA78B79D3081164A16FAAEC16A4BE release-manager key of an old release
 694621A7227D8D5289699830ABE9F3126BB741C1 release-manager key of an old release
