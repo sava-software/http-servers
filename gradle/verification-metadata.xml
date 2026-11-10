@@ -61,7 +61,7 @@
          <trusted-key id="DBD744ACE7ADE6AA50DD591F66B50994442D2D40" group="com.squareup.moshi"/>
          <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320" group="com.google.errorprone"/>
          <trusted-key id="F3FF33E96F18AA62DD580F9651FBF517CE6D6B80" group="gradle" name="gradle"/>
-         <trusted-key id="F5FEBA84EB26C56457B2CF819E31AB27445478DB" group="org.infinispan" name="infinispan-bom" version="16.2.3"/>
+         <trusted-key id="F5FEBA84EB26C56457B2CF819E31AB27445478DB" group="org.infinispan" name="infinispan-bom" version="16.3.1"/>
          <trusted-key id="F6A991654E702159FA9D613312D92BE9BC1771B4">
             <trusting group="io.helidon" version="4.5.6"/>
             <trusting group="io.helidon.builder" version="4.5.6"/>

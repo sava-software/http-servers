@@ -203,9 +203,9 @@ Jetty, a response that completes while its request body is still arriving ends t
 `RST_STREAM(CANCEL)`. That happens when a handler answers without reading an upload, or fails
 during one. RFC 9113 §8.1 describes `NO_ERROR` for that reset, and a client may discard a response
 on `CANCEL`. The JDK `HttpClient` does, and reports the reset instead of the status. This is
-Jetty's own stream handling (12.1.14), which the adapter could only avoid by reading the whole
-upload before it answers. HTTP/1.1 is unaffected: there the answer says `Connection: close` and the
-connection ends after it.
+Jetty's own stream handling (measured on 12.1.14 and 12.1.15), which the adapter could only avoid
+by reading the whole upload before it answers. HTTP/1.1 is unaffected: there the answer says
+`Connection: close` and the connection ends after it.
 
 **Connection persistence.** A handler that sets `Connection: close` on its response ends the
 connection after that response on every backend: the header reaches the wire and the server
