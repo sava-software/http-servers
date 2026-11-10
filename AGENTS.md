@@ -26,7 +26,12 @@ listed, so a Helidon bump moves its fourteen group-and-version rules with the li
 also move the Jersey, EE4J, OCI and Coherence BOM rules its dependency POM imports, as a Jetty
 bump can the Infinispan and testcontainers ones Jetty's parent imports. A
 `-PsavaBuildLocalRepo` build needs `--dependency-verification lenient`, since the test repo's
-artifacts are unsigned.
+artifacts are unsigned. No IDE sync is owed after a policy change, and a session never asks for
+one: a session that edits a rule, scope or keyring block nothing on the command line uses, or an
+unsigned module's sources pin, or bumps the wrapper, says so in its report, and a report of any
+other change says nothing about the IDE (sava-build's README at `main`, the closing paragraph of
+"Adopting and updating"; its README at tags up to 21.8.7 still has the step that paragraph
+replaced).
 
 ## Quality gate & mutation ratchet
 
