@@ -1,5 +1,21 @@
 # Changelog
 
+## [25.4.4](https://github.com/sava-software/http-servers/compare/25.4.3...25.4.4) (2026-11-10)
+
+
+### Features
+
+* **netty:** negotiate gzip responses over HTTP/1 ([8dff40e](https://github.com/sava-software/http-servers/commit/8dff40eddf9959e214c3aabd22cbb80ced2ab1a0))
+
+
+### Bug Fixes
+
+* **build:** upgrade to Gradle 9.9 and scope plugin repositories ([59ffb83](https://github.com/sava-software/http-servers/commit/59ffb8390fdb48c9a1afb66f1656287aee46d789))
+* **deps:** adopt catalog 25.30.53 for Netty 4.2.20.Final ([769874c](https://github.com/sava-software/http-servers/commit/769874cfc2896e542b3201e4b9e14429c6f7acfa))
+* **deps:** bump solanaBOMVersion to 25.30.49 for sava-rpc's typed HTTP failures ([aa85e82](https://github.com/sava-software/http-servers/commit/aa85e828d104e856aea64afc6591ae173ac877c5))
+* **deps:** bump solanaBOMVersion to 25.30.56 for Jetty 12.1.15 ([2bbd253](https://github.com/sava-software/http-servers/commit/2bbd25350152ddab77d45ecf5b07e922481c51ae))
+* **jetty:** require the gzip provider at run time ([ab14da3](https://github.com/sava-software/http-servers/commit/ab14da3cea3aeee28a2b6f317b41d2a14953a580))
+
 ## [25.4.3](https://github.com/sava-software/http-servers/compare/25.4.2...25.4.3) (2026-10-23)
 
 
