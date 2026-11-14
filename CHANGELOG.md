@@ -1,5 +1,12 @@
 # Changelog
 
+## [25.4.5](https://github.com/sava-software/http-servers/compare/25.4.4...25.4.5) (2026-11-14)
+
+
+### Bug Fixes
+
+* **deps:** bump solanaBOMVersion to 25.30.62 for sava 25.13.4 and idl-clients-spl 25.20.0 ([374880d](https://github.com/sava-software/http-servers/commit/374880dbdac1aa70ba3e3bb5efbb47ebf9a75cd1))
+
 ## [25.4.4](https://github.com/sava-software/http-servers/compare/25.4.3...25.4.4) (2026-11-10)
 
 
