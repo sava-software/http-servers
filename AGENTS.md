@@ -42,18 +42,28 @@ unsigned module's sources pin, or bumps the wrapper, says so in its report, and 
 other change says nothing about the IDE (sava-build's README, the closing paragraph of
 "Adopting and updating").
 
-A write run (the README's step 3) drafts lines into `gradle/verification-metadata.xml` even with
-no dependency change, and they are discarded, never reviewed into the policy. Since sava-build
-21.8.8 (a67fc97, whose `check` depends on a name-filtered task collection), resolving `check`'s
-dependencies creates `recommendModuleVersions` in every module, and that task creates
-java-module-dependencies' `latestVersionsClasspath`, `latest.release` of every required module;
-21.8.7's `check` created neither. Write mode downloads the files of every resolvable
-configuration, so a write that runs `check`, with or without `-PdependencyAudit`, drafts trust
-for whatever upstream released last: on 2026-11-20 the two keys that sign Netty's 5.0.0 alphas
-and a version-free regex scope on Helidon's key, drafted from 27.0.2. No build task downloads
-those files, and `recommendModuleVersions` reads only the graph, so no strict run checks them.
-A write is clean when every line it adds traces to that configuration and the cold runs pass;
-run the README's two writes from the committed policy, restoring the files between them.
+A write run (the README's step 3) can draft lines into `gradle/verification-metadata.xml` that
+come from no dependency the build uses. Since sava-build 21.8.8 (a67fc97, whose `check` depends
+on a name-filtered task collection), resolving `check`'s dependencies creates
+`recommendModuleVersions` in every module, and that task creates java-module-dependencies'
+`latestVersionsClasspath`, `latest.release` of every required module; 21.8.7's `check` created
+neither. Write mode downloads the files of every resolvable configuration, so a write that runs
+`check`, with or without `-PdependencyAudit`, drafts trust for whatever upstream released last:
+on 2026-11-20 the two keys that sign Netty's 5.0.0 alphas and a version-free regex scope on
+Helidon's key, drafted from 27.0.2. Discard only the lines that come from that configuration
+alone, then confirm the cold runs pass; anything else a write adds, such as what a dependency
+change brings, is reviewed like any draft. Run the README's two writes from the committed
+policy, restoring the files between them.
+
+A strict `check` and the standalone audit leave the configuration unresolved, so neither
+verifies it. An explicit `recommendModuleVersions` resolves its graph, and a later task in the
+same invocation that requests artifacts can then trigger verification of that graph's
+metadata: on 2026-11-20, strict and offline, `:http-servers-helidon:resolveVerificationTools`
+passed on its own, while an invocation running `:http-servers-helidon:recommendModuleVersions`
+first printed the recommendations and then refused 51 Helidon 27.0.2 POMs, whose signer the
+policy trusts only at 4.5.6. Gradle reported that refusal against the
+`:http-servers-helidon:pitest` configuration, which contains none of those POMs. The
+recommendations `recommendModuleVersions` prints rest on that unverified metadata.
 
 ## Quality gate & mutation ratchet
 
