@@ -22,4 +22,10 @@ final class JettyHttpServer implements HttpServer {
     // conflict leaves behind, so this stays a no-op rather than a second failure.
     server.stop();
   }
+
+  /// The port the listener bound, so a test can start on port 0 instead of probing for a free
+  /// one and racing another JVM to it. Meaningful only between a successful start() and stop().
+  int port() {
+    return ((org.eclipse.jetty.server.ServerConnector) server.getConnectors()[0]).getLocalPort();
+  }
 }

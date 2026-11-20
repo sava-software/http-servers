@@ -35,10 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// given; `theSuppliedExecutorReceivesNoWork` pins that negative instead.
 final class HelidonConformanceTest {
 
-  private static int freePort() throws Exception {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((HelidonHttpServer) server).port();
   }
 
   private static int serve(final java.util.function.Consumer<software.sava.http_servers.core.server.HttpServerBuilder> register)
@@ -286,10 +285,24 @@ final class HelidonConformanceTest {
     for (final String host : new String[]{null, "  "}) {
       final var builder = new HelidonBuilderFactory().createBuilder();
       builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-      final int port = freePort();
-      builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, port).start();
+      final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, 0);
+      server.start();
+      final int port = boundPort(server);
       try (final var client = HttpClient.newHttpClient()) {
         assertEquals("w", get(client, port, "/w").body(), "host=" + host);
+      }
+    }
+  }
+
+  /// An absent host still binds the port the caller asked for, which the port-0 round trip
+  /// above cannot show. Checked on the listener configuration, not by a bind that fails: a
+  /// Helidon start that fails to bind leaves its idle timer and socket channel behind.
+  @Test
+  void absentHostBindsTheRequestedPort() {
+    try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (final String host : new String[]{null, "  "}) {
+        final var config = new HelidonServerBuilder().initRestServer(executor, host, 54_321);
+        assertEquals(54_321, config.port(), "an absent host must keep the requested port: host=" + host);
       }
     }
   }
@@ -1170,37 +1183,12 @@ final class HelidonConformanceTest {
         "Helidon's start-up logging must surface through JUL; captured records: " + records.size());
   }
 
-  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
-  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
-  /// propagates untouched.
+  /// Binds port 0 so the operating system picks a port no other listener holds, and reads it
+  /// back from the started server: there is no probe-close-rebind window to race.
   private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      try {
-        builder.createServer(executor, "localhost", port).start();
-        return port;
-      } catch (final Exception e) {
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
-    }
-  }
-
-  /// Helidon reports a bind conflict only through its own SEVERE log and `isRunning()`, so
-  /// the adapter's `IOException` carries no `BindException` cause; the lost-race check
-  /// reads the adapter's message instead.
-  private static boolean lostThePortRace(final Throwable thrown) {
-    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
-        return true;
-      }
-      if (cause instanceof java.io.IOException && String.valueOf(cause.getMessage()).contains("failed to start")) {
-        return true;
-      }
-    }
-    return false;
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", 0);
+    server.start();
+    return boundPort(server);
   }
 
   /// A server that cannot bind must throw — never report success and hold a dead server.
@@ -1234,18 +1222,13 @@ final class HelidonConformanceTest {
   /// Like [#start], but hands the server back so the caller owns its lifecycle.
   private static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
                                         final java.util.concurrent.Executor executor) throws Exception {
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      final var server = builder.createServer(executor, "localhost", port);
-      try {
-        server.start();
-        return new OwnedServer(server, port);
-      } catch (final Exception e) {
-        server.stop();
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
+    final var server = builder.createServer(executor, "localhost", 0);
+    try {
+      server.start();
+      return new OwnedServer(server, boundPort(server));
+    } catch (final Exception e) {
+      server.stop();
+      throw e;
     }
   }
 
@@ -1276,7 +1259,7 @@ final class HelidonConformanceTest {
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       final var builder = new HelidonBuilderFactory().createBuilder();
       builder.blockingQueryHandler("/x", request -> HttpResponse.response("text/plain", "x"));
-      final var server = builder.createServer(executor, "localhost", freePort());
+      final var server = builder.createServer(executor, "localhost", 0);
       org.junit.jupiter.api.Assertions.assertDoesNotThrow(server::stop);
     }
   }

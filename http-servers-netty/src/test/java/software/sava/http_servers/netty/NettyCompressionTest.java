@@ -22,7 +22,6 @@ import software.sava.http_servers.core.handlers.HandlerMap;
 import software.sava.http_servers.core.response.HttpResponse;
 
 import java.io.ByteArrayInputStream;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -43,6 +42,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class NettyCompressionTest {
+
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((NettyHttpServer) server).port();
+  }
 
   private static final String BODY = "{\"message\":\"gzip response payload for an API client\"}".repeat(32);
 
@@ -563,16 +567,13 @@ final class NettyCompressionTest {
 
   @Test
   void gzipSurvivesARealHttp11RoundTrip() throws Exception {
-    final int port;
-    try (final var socket = new ServerSocket(0)) {
-      port = socket.getLocalPort();
-    }
     final var builder = new NettyServerBuilder();
     builder.nonBlockingQueryHandler("/body", request -> HttpResponse.response("application/json", BODY));
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor();
-         final var server = builder.createServer(executor, "127.0.0.1", port);
+         final var server = builder.createServer(executor, "127.0.0.1", 0);
          final var client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()) {
       server.start();
+      final int port = boundPort(server);
       final var response = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/body"))
           .timeout(Duration.ofSeconds(2)).header("Accept-Encoding", "gzip").GET().build(),
           java.net.http.HttpResponse.BodyHandlers.ofByteArray());

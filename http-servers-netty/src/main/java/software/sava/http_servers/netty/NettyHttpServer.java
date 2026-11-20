@@ -47,6 +47,8 @@ final class NettyHttpServer implements HttpServer {
   private volatile ChannelHandler childHandler;
   private EventLoopGroup bossGroup;
   private EventLoopGroup workerGroup;
+  // the port the listener bound, kept as a number so a stopped server holds no channel
+  private int boundPort;
 
   NettyHttpServer(final Executor executor, final InetSocketAddress address, final int ioThreads) {
     this.executor = executor;
@@ -74,12 +76,14 @@ final class NettyHttpServer implements HttpServer {
     }
     bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
     workerGroup = new MultiThreadIoEventLoopGroup(ioThreads, NioIoHandler.newFactory());
-    new ServerBootstrap()
+    final var listener = new ServerBootstrap()
         .group(bossGroup, workerGroup)
         .channel(NioServerSocketChannel.class)
         .childHandler(childHandler)
         .bind(address)
-        .sync();
+        .sync()
+        .channel();
+    boundPort = ((InetSocketAddress) listener.localAddress()).getPort();
   }
 
   @Override
@@ -89,6 +93,12 @@ final class NettyHttpServer implements HttpServer {
       bossGroup = null;
       workerGroup = null;
     }
+  }
+
+  /// The port the listener bound, so a test can start on port 0 instead of probing for a free
+  /// one and racing another JVM to it. Meaningful only between a successful start() and stop().
+  synchronized int port() {
+    return boundPort;
   }
 
   private static void shutdown(final EventLoopGroup... groups) throws Exception {

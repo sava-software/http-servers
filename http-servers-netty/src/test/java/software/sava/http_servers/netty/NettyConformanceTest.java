@@ -39,7 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// starts) is registered and stopped in an `@AfterEach`, so no connection or event-loop
 /// thread leaks between tests — the teardown sava-build's HARDENING.md asks for so state
 /// cannot leak between PIT mutants ("When a mutant won't die"). Tests that own a server's
-/// lifecycle explicitly (`startOwned`, `startOnAnOccupiedPortThrows`) close it themselves.
+/// lifecycle explicitly (`startOwned`, `startOnAnOccupiedPortThrows`,
+/// `absentHostBindsTheRequestedPort`) close it themselves.
 ///
 /// Every client request and raw socket carries a 2 s bound (the JDK and Helidon suites use 10 s).
 /// A dropped response write leaves the client blocked on a read, and PIT's per-mutant
@@ -53,6 +54,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// for an event and never a sleep; the idle timeout's arithmetic, and which connections it
 /// applies to, are pinned on an advanced clock in `NettyPipelineTest`.
 final class NettyConformanceTest {
+
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((NettyHttpServer) server).port();
+  }
 
   /// Every server a test starts without owning its lifecycle, drained here so no bound
   /// listener or event-loop thread survives the test.
@@ -73,12 +79,6 @@ final class NettyConformanceTest {
     started.clear();
     if (first != null) {
       throw first;
-    }
-  }
-
-  private static int freePort() throws Exception {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
     }
   }
 
@@ -389,12 +389,30 @@ final class NettyConformanceTest {
   void absentHostBindsAllInterfaces() throws Exception {
     final var builder = new NettyBuilderFactory().createBuilder();
     builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-    final int port = freePort();
-    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, port);
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, 0);
     server.start();
     started.add(server);
+    final int port = boundPort(server);
     try (final var client = HttpClient.newHttpClient()) {
       assertEquals("w", get(client, port, "/w").body());
+    }
+  }
+
+  /// An absent host still binds the port the caller asked for, which the port-0 round trip
+  /// above cannot show: a wildcard listener holding that port must make the start fail.
+  @Test
+  void absentHostBindsTheRequestedPort() throws Exception {
+    try (final var occupant = new ServerSocket(0)) {
+      final var builder = new NettyBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+      final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, occupant.getLocalPort());
+      try {
+        final var thrown = org.junit.jupiter.api.Assertions.assertThrows(Exception.class, server::start,
+            "an absent host must bind the requested port, so a listener already holding it must make the start fail");
+        assertTrue(failedToBind(thrown), "the bind failure must be discoverable in the cause chain: " + thrown);
+      } finally {
+        server.stop();
+      }
     }
   }
 
@@ -715,34 +733,28 @@ final class NettyConformanceTest {
     }
   }
 
-  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
-  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
-  /// propagates untouched.
+  /// Binds port 0 so the operating system picks a port no other listener holds, and reads it
+  /// back from the started server: there is no probe-close-rebind window to race.
   private int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
     return start(builder, Executors.newVirtualThreadPerTaskExecutor());
   }
 
   private int start(final software.sava.http_servers.core.server.HttpServerBuilder builder,
                     final java.util.concurrent.Executor executor) throws Exception {
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      final var server = builder.createServer(executor, "localhost", port);
-      try {
-        server.start();
-        started.add(server);
-        return port;
-      } catch (final Exception e) {
-        server.stop();
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
+    final var server = builder.createServer(executor, "localhost", 0);
+    try {
+      server.start();
+    } catch (final Exception e) {
+      server.stop();
+      throw e;
     }
+    started.add(server);
+    return boundPort(server);
   }
 
-  private static boolean lostThePortRace(final Throwable thrown) {
+  private static boolean failedToBind(final Throwable thrown) {
     for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
+      if (cause instanceof java.net.BindException) {
         return true;
       }
     }
@@ -750,9 +762,9 @@ final class NettyConformanceTest {
   }
 
   /// A server that cannot bind must throw — never report success and hold a dead server —
-  /// and the throw must carry `java.net.BindException` in its cause chain, which is what
-  /// [#start]'s port-race retry keys on. Like Jetty's, a failed start leaves the event loops
-  /// allocated until `stop()`, so the server is stopped in `finally`.
+  /// and the throw must carry `java.net.BindException` in its cause chain, so a caller can tell
+  /// a lost bind from any other start failure. Like Jetty's, a failed start leaves the event
+  /// loops allocated until `stop()`, so the server is stopped in `finally`.
   @Test
   void startOnAnOccupiedPortThrows() throws Exception {
     try (final var occupant = new ServerSocket(0, 50, java.net.InetAddress.getByName("localhost"))) {
@@ -762,7 +774,7 @@ final class NettyConformanceTest {
       try {
         final var thrown = org.junit.jupiter.api.Assertions.assertThrows(Exception.class, server::start,
             "a server that cannot bind must throw, never report success silently");
-        assertTrue(lostThePortRace(thrown), "the bind failure must be discoverable in the cause chain: " + thrown);
+        assertTrue(failedToBind(thrown), "the bind failure must be discoverable in the cause chain: " + thrown);
       } finally {
         server.stop();
       }
@@ -775,18 +787,13 @@ final class NettyConformanceTest {
   /// Like [#start], but hands the server back so the caller owns its lifecycle.
   private static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
                                         final java.util.concurrent.Executor executor) throws Exception {
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      final var server = builder.createServer(executor, "localhost", port);
-      try {
-        server.start();
-        return new OwnedServer(server, port);
-      } catch (final Exception e) {
-        server.stop();
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
+    final var server = builder.createServer(executor, "localhost", 0);
+    try {
+      server.start();
+      return new OwnedServer(server, boundPort(server));
+    } catch (final Exception e) {
+      server.stop();
+      throw e;
     }
   }
 

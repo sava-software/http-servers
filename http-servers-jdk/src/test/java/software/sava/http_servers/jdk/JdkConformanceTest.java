@@ -38,10 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// jdk.httpserver.
 final class JdkConformanceTest {
 
-  private static int freePort() throws Exception {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((JdkHttpServer) server).port();
   }
 
   private static int serve(final java.util.function.Consumer<software.sava.http_servers.core.server.HttpServerBuilder> register)
@@ -462,8 +461,9 @@ final class JdkConformanceTest {
     final var builder = new JDKHttpServerBuilderFactory().createBuilder();
     builder.nonBlockingQueryHandler("/nb", JdkConformanceTest::currentThreadName);
     builder.blockingQueryHandler("/b", JdkConformanceTest::currentThreadName);
-    final int port = freePort();
-    builder.createServer(serverExecutor, "localhost", port).start();
+    final var server = builder.createServer(serverExecutor, "localhost", 0);
+    server.start();
+    final int port = boundPort(server);
 
     try (final var client = HttpClient.newHttpClient()) {
       final var nonBlocking = get(client, port, "/nb").body();
@@ -483,8 +483,9 @@ final class JdkConformanceTest {
     @SuppressWarnings("removal")
     final var builder = new JdkServerBuilder(taskExecutor);
     builder.nonBlockingQueryHandler("/nb", JdkConformanceTest::currentThreadName);
-    final int port = freePort();
-    builder.createServer(new RecordingExecutor("server-executor-"), "localhost", port).start();
+    final var server = builder.createServer(new RecordingExecutor("server-executor-"), "localhost", 0);
+    server.start();
+    final int port = boundPort(server);
 
     try (final var client = HttpClient.newHttpClient()) {
       final var nonBlocking = get(client, port, "/nb").body();
@@ -498,8 +499,9 @@ final class JdkConformanceTest {
     final var serverExecutor = new RecordingExecutor("server-executor-");
     final var builder = new JDKHttpServerBuilderFactory().createBuilder();
     builder.blockingQueryHandler("/e", request -> HttpResponse.response("text/plain", "e"));
-    final int port = freePort();
-    builder.createServer(serverExecutor, "localhost", port).start();
+    final var server = builder.createServer(serverExecutor, "localhost", 0);
+    server.start();
+    final int port = boundPort(server);
 
     try (final var client = HttpClient.newHttpClient()) {
       assertEquals("e", get(client, port, "/e").body());
@@ -518,8 +520,9 @@ final class JdkConformanceTest {
   void absentHostBindsAllInterfaces() throws Exception {
     final var builder = new JDKHttpServerBuilderFactory().createBuilder();
     builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-    final int port = freePort();
-    builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, port).start();
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), null, 0);
+    server.start();
+    final int port = boundPort(server);
     try (final var client = HttpClient.newHttpClient()) {
       assertEquals("w", client.send(
           HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/w"))
@@ -528,6 +531,28 @@ final class JdkConformanceTest {
               .build(),
           BodyHandlers.ofString()
       ).body());
+    }
+  }
+
+  /// An absent host still binds the port the caller asked for, which the port-0 round trip
+  /// above cannot show: a wildcard listener holding that port must make the bind fail.
+  @Test
+  void absentHostBindsTheRequestedPort() throws Exception {
+    try (final var occupant = new ServerSocket(0)) {
+      final var builder = new JDKHttpServerBuilderFactory().createBuilder();
+      builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+      // jdk.httpserver binds in createServer; should it bind anyway, the server is started and
+      // stopped here so the failed assertion leaves no listener or dispatcher behind.
+      final var thrown = org.junit.jupiter.api.Assertions.assertThrows(java.io.UncheckedIOException.class, () -> {
+        final var server = builder.createServer(Runnable::run, null, occupant.getLocalPort());
+        try {
+          server.start();
+        } finally {
+          server.stop();
+        }
+      }, "an absent host must bind the requested port, so a listener already holding it must make the bind fail");
+      assertTrue(thrown.getCause() instanceof java.net.BindException,
+          "the failure must be the bind conflict, not some other start error: " + thrown);
     }
   }
 
@@ -878,31 +903,12 @@ final class JdkConformanceTest {
     }
   }
 
-  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
-  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
-  /// propagates untouched.
+  /// Binds port 0 so the operating system picks a port no other listener holds, and reads it
+  /// back from the started server: there is no probe-close-rebind window to race.
   private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      try {
-        builder.createServer(executor, "localhost", port).start();
-        return port;
-      } catch (final Exception e) {
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
-    }
-  }
-
-  private static boolean lostThePortRace(final Throwable thrown) {
-    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
-        return true;
-      }
-    }
-    return false;
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", 0);
+    server.start();
+    return boundPort(server);
   }
 
   /// A server that cannot bind must throw — never report success and hold a dead server.
@@ -923,18 +929,13 @@ final class JdkConformanceTest {
   /// Like [#start], but hands the server back so the caller owns its lifecycle.
   private static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
                                         final java.util.concurrent.Executor executor) throws Exception {
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      final var server = builder.createServer(executor, "localhost", port);
-      try {
-        server.start();
-        return new OwnedServer(server, port);
-      } catch (final Exception e) {
-        server.stop();
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
+    final var server = builder.createServer(executor, "localhost", 0);
+    try {
+      server.start();
+      return new OwnedServer(server, boundPort(server));
+    } catch (final Exception e) {
+      server.stop();
+      throw e;
     }
   }
 

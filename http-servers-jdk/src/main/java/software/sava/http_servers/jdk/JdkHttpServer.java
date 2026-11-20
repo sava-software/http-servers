@@ -22,4 +22,11 @@ final class JdkHttpServer implements HttpServer {
     // documents. Safe on a server that never started.
     server.stop(0);
   }
+
+  /// The port the listener bound, so a test can start on port 0 instead of probing for a free
+  /// one and racing another JVM to it. Meaningful from creation, since jdk.httpserver binds in
+  /// createServer, until stop().
+  int port() {
+    return server.getAddress().getPort();
+  }
 }

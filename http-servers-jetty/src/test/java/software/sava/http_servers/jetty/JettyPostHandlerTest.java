@@ -3,7 +3,6 @@ package software.sava.http_servers.jetty;
 import org.junit.jupiter.api.Test;
 import software.sava.http_servers.core.response.HttpResponse;
 
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,10 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class JettyPostHandlerTest {
 
-  private static int freePort() throws Exception {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((JettyHttpServer) server).port();
   }
 
   @Test
@@ -107,30 +105,11 @@ final class JettyPostHandlerTest {
     }
   }
 
-  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
-  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
-  /// propagates untouched.
+  /// Binds port 0 so the operating system picks a port no other listener holds, and reads it
+  /// back from the started server: there is no probe-close-rebind window to race.
   private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      try {
-        builder.createServer(executor, "localhost", port).start();
-        return port;
-      } catch (final Exception e) {
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
-    }
-  }
-
-  private static boolean lostThePortRace(final Throwable thrown) {
-    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
-        return true;
-      }
-    }
-    return false;
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", 0);
+    server.start();
+    return boundPort(server);
   }
 }

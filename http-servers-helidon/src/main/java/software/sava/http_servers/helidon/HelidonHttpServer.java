@@ -51,4 +51,10 @@ final class HelidonHttpServer implements HttpServer {
       webServer.stop();
     }
   }
+
+  /// The port the listener bound, so a test can start on port 0 instead of probing for a free
+  /// one and racing another JVM to it. Meaningful only between a successful start() and stop().
+  synchronized int port() {
+    return server.port();
+  }
 }

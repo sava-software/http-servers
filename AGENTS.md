@@ -218,8 +218,9 @@ Helidon's own routing never decides a match. Versions come from `solana-version-
   (wildcard) against `helidon.*Test*`, with `EXPERIMENTAL_NAKED_RECEIVER` added to `STRONGER`
   because `ServerResponse.status`/`header` and `WebServerConfig.Builder` are fluent, so a dropped
   header or listener setting is invisible to `VoidMethodCallMutator` (trial 2026-09-12: 13
-  generated, 13 killed). 73 mutants since the pre-flight conditionals moved to core's
-  `CorsRequest` on 2026-10-14, **100% killed**, no accepted baseline file and an empty,
+  generated, 13 killed). 74 mutants since the tests' `port()` accessor of 2026-11-20 (73 after
+  the pre-flight conditionals moved to core's `CorsRequest` on 2026-10-14), **100% killed**,
+  no accepted baseline file and an empty,
   armed `dispatch-timeouts.csv` — keep both that way. The covering tests are real socket round
   trips in `HelidonConformanceTest` and `HelidonPostHandlerTest`.
 

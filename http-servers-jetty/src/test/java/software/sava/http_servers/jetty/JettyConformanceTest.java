@@ -31,14 +31,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// hang fails its test as a timeout exception, an assertion-level kill.
 final class JettyConformanceTest {
 
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((JettyHttpServer) server).port();
+  }
+
   private static final software.sava.http_servers.core.server.HttpServerBuilderFactory FACTORY =
       new JettyServerBuilderFactory();
-
-  private static int freePort() throws Exception {
-    try (final var socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
-  }
 
   private static int serve(final java.util.function.Consumer<software.sava.http_servers.core.server.HttpServerBuilder> register)
       throws Exception {
@@ -451,12 +450,43 @@ final class JettyConformanceTest {
     for (final String host : new String[]{null, "  "}) {
       final var builder = FACTORY.createBuilder();
       builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
-      final int port = freePort();
-      builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, port).start();
+      final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), host, 0);
+      server.start();
+      final int port = boundPort(server);
       try (final var client = HttpClient.newHttpClient()) {
         assertEquals("w", get(client, port, "/w").body(), "host=" + host);
       }
     }
+  }
+
+  /// An absent host still binds the port the caller asked for, which the port-0 round trip
+  /// above cannot show: a wildcard listener holding that port must make the start fail.
+  @Test
+  void absentHostBindsTheRequestedPort() throws Exception {
+    for (final String host : new String[]{null, "  "}) {
+      try (final var occupant = new ServerSocket(0);
+           final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        final var builder = new JettyServerBuilderFactory().createBuilder();
+        builder.blockingQueryHandler("/w", request -> HttpResponse.response("text/plain", "w"));
+        final var server = builder.createServer(executor, host, occupant.getLocalPort());
+        try {
+          final var thrown = org.junit.jupiter.api.Assertions.assertThrows(Exception.class, server::start,
+              "an absent host must bind the requested port, so a listener already holding it must make the start fail: host=" + host);
+          assertTrue(failedToBind(thrown), "the failure must be the bind conflict, not some other start error: " + thrown);
+        } finally {
+          server.stop();
+        }
+      }
+    }
+  }
+
+  private static boolean failedToBind(final Throwable thrown) {
+    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+      if (cause instanceof java.net.BindException) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Test
@@ -677,8 +707,9 @@ final class JettyConformanceTest {
 
     final var builder = new JettyServerBuilderFactory().createBuilder();
     builder.blockingQueryHandler("/b", request -> HttpResponse.response("text/plain", "b"));
-    final int port = freePort();
-    builder.createServer(recording, "localhost", port).start();
+    final var server = builder.createServer(recording, "localhost", 0);
+    server.start();
+    final int port = boundPort(server);
 
     try (final var client = HttpClient.newHttpClient()) {
       assertEquals("b", get(client, port, "/b").body());
@@ -949,31 +980,12 @@ final class JettyConformanceTest {
     }
   }
 
-  /// `freePort`'s probe-close-rebind window can race a parallel test to the port; retry
-  /// with a fresh port when the loser's bind fails. Anything that is not a lost port race
-  /// propagates untouched.
+  /// Binds port 0 so the operating system picks a port no other listener holds, and reads it
+  /// back from the started server: there is no probe-close-rebind window to race.
   private static int start(final software.sava.http_servers.core.server.HttpServerBuilder builder) throws Exception {
-    final var executor = Executors.newVirtualThreadPerTaskExecutor();
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      try {
-        builder.createServer(executor, "localhost", port).start();
-        return port;
-      } catch (final Exception e) {
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
-    }
-  }
-
-  private static boolean lostThePortRace(final Throwable thrown) {
-    for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-      if (cause instanceof java.net.BindException || cause instanceof java.net.ConnectException) {
-        return true;
-      }
-    }
-    return false;
+    final var server = builder.createServer(Executors.newVirtualThreadPerTaskExecutor(), "localhost", 0);
+    server.start();
+    return boundPort(server);
   }
 
   /// A server that cannot bind must throw — never report success and hold a dead server.
@@ -1003,18 +1015,13 @@ final class JettyConformanceTest {
   /// Like [#start], but hands the server back so the caller owns its lifecycle.
   static OwnedServer startOwned(final software.sava.http_servers.core.server.HttpServerBuilder builder,
                                 final java.util.concurrent.Executor executor) throws Exception {
-    for (int attempt = 0; ; ++attempt) {
-      final int port = freePort();
-      final var server = builder.createServer(executor, "localhost", port);
-      try {
-        server.start();
-        return new OwnedServer(server, port);
-      } catch (final Exception e) {
-        server.stop();
-        if (attempt == 2 || !lostThePortRace(e)) {
-          throw e;
-        }
-      }
+    final var server = builder.createServer(executor, "localhost", 0);
+    try {
+      server.start();
+      return new OwnedServer(server, boundPort(server));
+    } catch (final Exception e) {
+      server.stop();
+      throw e;
     }
   }
 

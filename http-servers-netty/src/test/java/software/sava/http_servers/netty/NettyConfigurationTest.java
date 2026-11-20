@@ -9,7 +9,6 @@ import software.sava.http_servers.core.response.HttpResponse;
 import software.sava.http_servers.core.server.HttpServerBuilder;
 
 import java.io.ByteArrayInputStream;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -28,6 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// builder is created. No test reads the builder's private configuration fields.
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 final class NettyConfigurationTest {
+
+  /// The port a server started on port 0 bound, read from the backend (package-private).
+  private static int boundPort(final software.sava.http_servers.core.server.HttpServer server) {
+    return ((NettyHttpServer) server).port();
+  }
 
   private static final String BODY = "factory-configured response ".repeat(64);
   private String previousCompression;
@@ -55,14 +59,11 @@ final class NettyConfigurationTest {
 
   private static void assertHttp11Compression(final HttpServerBuilder builder, final boolean compressed)
       throws Exception {
-    final int port;
-    try (final var socket = new ServerSocket(0)) {
-      port = socket.getLocalPort();
-    }
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor();
-         final var server = builder.createServer(executor, "127.0.0.1", port);
+         final var server = builder.createServer(executor, "127.0.0.1", 0);
          final var client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()) {
       server.start();
+      final int port = boundPort(server);
       final var response = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/configuration"))
           .timeout(Duration.ofSeconds(2)).header("Accept-Encoding", "gzip").GET().build(),
           java.net.http.HttpResponse.BodyHandlers.ofByteArray());
