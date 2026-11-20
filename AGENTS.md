@@ -17,8 +17,17 @@ the `hardening {}` block in each module's `build.gradle.kts`.
 Every dependency is verified against `gradle/verification-metadata.xml`, the signatures and
 checksums policy sava-build's `verificationPolicy` task guards as part of `check`; the rules and
 the update procedure are sava-build's README, "Verifying sava artifacts". Check a dependency or
-policy change with `./gradlew --no-configuration-cache check resolveVerificationTools`: a reused
-configuration-cache entry resolves nothing and so verifies nothing. A refusal names the
+policy change with `./gradlew --no-configuration-cache check resolveVerificationTools`, then with
+the audit, `./gradlew --no-configuration-cache -PdependencyAudit checkModuleDirectivesScope`: a
+reused configuration-cache entry resolves nothing and so verifies nothing. `settings.gradle.kts`
+declares the dependency-analysis plugin on demand, so the audit is the only run that resolves
+its chain, and the rules of eleven keys are met by it alone: `com.autonomousapps`, the Square
+key's (moshi and kotlinpoet), okio, moshix, caffeine, guava, j2objc-annotations, errorprone,
+`org.jetbrains.kotlin`, and two exact-version rules for listed keys (guava-parent 26.0-android,
+`org.jetbrains:annotations` 13.0). The first run passes whatever became of those rules, so a
+write run and a cold run owe the audit too. The plugin's version there follows
+`dependency-analysis-gradle-plugin` in sava-build's `gradle/libs.versions.toml` at the pinned
+tag, and the policy's rules for its chain move with it. A refusal names the
 artifact; the README's four cases, and for a listed key its section's heading in
 `gradle/verification/version-scoped-keys.txt`, say what to do, and the files are only ever edited
 in their own shape: a key's version and its list line move together. Helidon's signer is
@@ -29,9 +38,23 @@ bump can the Infinispan and testcontainers ones Jetty's parent imports. A
 artifacts are unsigned. No IDE sync is owed after a policy change, and a session never asks for
 one: a session that edits a rule, scope or keyring block nothing on the command line uses, or an
 unsigned module's sources pin, or bumps the wrapper, says so in its report, and a report of any
-other change says nothing about the IDE (sava-build's README at `main`, the closing paragraph of
-"Adopting and updating"; its README at tags up to 21.8.7 still has the step that paragraph
-replaced).
+other change says nothing about the IDE (sava-build's README, the closing paragraph of
+"Adopting and updating").
+
+A write run (the README's step 3, `--write-verification-metadata`) drafts lines here even with no
+dependency change, and they are discarded, never reviewed into the policy. Gradle's write mode
+downloads the files of every resolvable configuration, `latestVersionsClasspath` among them,
+which java-module-dependencies fills with `latest.release` of every required module for its
+`recommendModuleVersions` task. No build task downloads that configuration's files, and the
+task itself reads only the graph, so no strict run verifies them. On 2026-11-20 the draft
+added two `io.netty` keys that sign the 5.0.0 alphas Gradle examines and rejects before it
+settles on the newest 4.x, and a regex scope for Helidon's key, the newest Helidon being
+27.0.2. The draft follows whatever upstream released last, so read it by mechanism: a
+write run is clean when every line it adds traces to that configuration, the audit's write run
+adds nothing, and the cold runs pass. This started with sava-build 21.8.8, which stopped
+applying the dependency-analysis plugin. A write under 21.8.7 never resolved the configuration,
+and the audit's write, with the plugin applied, still does not. Run the two writes from the
+committed policy, restoring the files between them.
 
 ## Quality gate & mutation ratchet
 
@@ -88,9 +111,9 @@ replaced).
   the test body. Exclusions must cover the test source set, not a naming convention.
 - Git-ignored scratch sources (`Integ.java` drivers) never sit in a hardened project's
   `main` or `test` source set; keep them in a git-ignored `scratch` source set instead.
-- Verify by the absence of failures: trust the exit code and the `.running`
-  sentinel, not a summary. `MINION_DIED` and `RUN_ERROR` are not results; re-run once
-  on a quiet machine. A suite that got faster without getting narrower is a bug report.
+- Verify by the absence of failures: trust the exit code and the `.running` sentinel,
+  not a summary. `MINION_DIED` and `RUN_ERROR` are not results: re-run once, unless the
+  plugin says it did. A suite that got faster without getting narrower is a bug report.
 - Fuzz findings become a committed seed input and a named regression test. Run
   `fuzzAll` locally with an explicit `-PmaxFuzzTime` and `-PmaxParallelFuzzTargets`
   before a release. Where one thing has two representations, fuzz the differential.
@@ -98,8 +121,10 @@ replaced).
   sava-build's HARDENING.md holds the argument behind every rule above.
 <!-- hardening-template block:end -->
 
-CI owns `check`; the local release checklist owns `hardeningCertifyAll` and
-the explicit `fuzzAll` campaign. Complete certification means seven project
+CI owns `check`; the local release checklist owns `hardeningCertifyAll`,
+the explicit `fuzzAll` campaign and `./gradlew -PdependencyAudit checkModuleDirectivesScope`,
+the module-directive scope check that `check` and CI no longer run (`settings.gradle.kts`
+says why). Complete certification means seven project
 receipts covering twelve suites with no `.running` sentinel. The fuzz campaign
 must record both its time budget and parallel-target limit and exercise all five
 registered targets: `formatPlaceholders`, `pathCanonicalizer`, `handlerUtil`,

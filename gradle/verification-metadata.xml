@@ -23,7 +23,7 @@
          <trusted-key id="28118C070CB22A0175A2E8D43D12CA2AC19F3181" group="^com[.]fasterxml($|([.].*))" regex="true"/>
          <trusted-key id="2DB4F1EF0FA761ECC4EA935C86FDC7E2A11262CB" group="org.apache.commons"/>
          <trusted-key id="2E3A1AFFE42B5F53AF19F780BCF4173966770193" group="org.jetbrains" name="annotations" version="13.0"/>
-         <trusted-key id="34441E504A937F43EB0DAEF96A65176A0FB1CD0B" group="org.apache.groovy"/>
+         <trusted-key id="34441E504A937F43EB0DAEF96A65176A0FB1CD0B" group="org.apache.groovy" name="groovy-bom"/>
          <trusted-key id="3F05DDA9F317301E927136D417A27CE7A60FF5F0" group="io.opentelemetry"/>
          <trusted-key id="41CD49B4EF5876F9E9F691DABAC30622339994C4" group="org.jspecify" name="jspecify"/>
          <trusted-key id="44FBDBBC1A00FE414F1C1873586654072EAD6677" group="org.sonatype.oss" name="oss-parent" version="9"/>
@@ -51,7 +51,11 @@
          <trusted-key id="C8D37E9675158FF5B29B6D6452FC3551DA8DC57E" group="com.oracle.database.jdbc" name="ojdbc-bom" version="23.26.1.0.0"/>
          <trusted-key id="CF4B3A3F53BEF9A2CE2CBFB895962C5E716C39AA" group="com.autonomousapps"/>
          <trusted-key id="D233B6C6E7EDC0866D486C166054D87C226DFDC2" group="com.code-intelligence"/>
-         <trusted-key id="DBD744ACE7ADE6AA50DD591F66B50994442D2D40" group="com.squareup.moshi"/>
+         <trusted-key id="DBD744ACE7ADE6AA50DD591F66B50994442D2D40">
+            <trusting group="com.squareup" name="kotlinpoet"/>
+            <trusting group="com.squareup" name="kotlinpoet-jvm"/>
+            <trusting group="com.squareup.moshi"/>
+         </trusted-key>
          <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320" group="com.google.errorprone"/>
          <trusted-key id="F3FF33E96F18AA62DD580F9651FBF517CE6D6B80" group="gradle" name="gradle"/>
          <trusted-key id="F5FEBA84EB26C56457B2CF819E31AB27445478DB" group="org.infinispan" name="infinispan-bom" version="16.3.1"/>
