@@ -24,10 +24,11 @@ declares the dependency-analysis plugin on demand, so the audit is the only run 
 its chain, and the rules of eleven keys are met by it alone: `com.autonomousapps`, the Square
 key's (moshi and kotlinpoet), okio, moshix, caffeine, guava, j2objc-annotations, errorprone,
 `org.jetbrains.kotlin`, and two exact-version rules for listed keys (guava-parent 26.0-android,
-`org.jetbrains:annotations` 13.0). The first run passes whatever became of those rules, so a
-write run and a cold run owe the audit too. The plugin's version there follows
-`dependency-analysis-gradle-plugin` in sava-build's `gradle/libs.versions.toml` at the pinned
-tag, and the policy's rules for its chain move with it. A refusal names the
+`org.jetbrains:annotations` 13.0). The run without the property passes whatever became of
+those rules, so a write run and a cold run owe the audit too. The plugin's version in
+`settings.gradle.kts` follows `dependency-analysis-gradle-plugin` in sava-build's
+`gradle/libs.versions.toml` at the pinned tag, and the policy's rules for its chain move with
+it. A refusal names the
 artifact; the README's four cases, and for a listed key its section's heading in
 `gradle/verification/version-scoped-keys.txt`, say what to do, and the files are only ever edited
 in their own shape: a key's version and its list line move together. Helidon's signer is
@@ -41,20 +42,18 @@ unsigned module's sources pin, or bumps the wrapper, says so in its report, and 
 other change says nothing about the IDE (sava-build's README, the closing paragraph of
 "Adopting and updating").
 
-A write run (the README's step 3, `--write-verification-metadata`) drafts lines here even with no
-dependency change, and they are discarded, never reviewed into the policy. Gradle's write mode
-downloads the files of every resolvable configuration, `latestVersionsClasspath` among them,
-which java-module-dependencies fills with `latest.release` of every required module for its
-`recommendModuleVersions` task. No build task downloads that configuration's files, and the
-task itself reads only the graph, so no strict run verifies them. On 2026-11-20 the draft
-added two `io.netty` keys that sign the 5.0.0 alphas Gradle examines and rejects before it
-settles on the newest 4.x, and a regex scope for Helidon's key, the newest Helidon being
-27.0.2. The draft follows whatever upstream released last, so read it by mechanism: a
-write run is clean when every line it adds traces to that configuration, the audit's write run
-adds nothing, and the cold runs pass. This started with sava-build 21.8.8, which stopped
-applying the dependency-analysis plugin. A write under 21.8.7 never resolved the configuration,
-and the audit's write, with the plugin applied, still does not. Run the two writes from the
-committed policy, restoring the files between them.
+A write run (the README's step 3) drafts lines into `gradle/verification-metadata.xml` even with
+no dependency change, and they are discarded, never reviewed into the policy. Since sava-build
+21.8.8 (a67fc97, whose `check` depends on a name-filtered task collection), resolving `check`'s
+dependencies creates `recommendModuleVersions` in every module, and that task creates
+java-module-dependencies' `latestVersionsClasspath`, `latest.release` of every required module;
+21.8.7's `check` created neither. Write mode downloads the files of every resolvable
+configuration, so a write that runs `check`, with or without `-PdependencyAudit`, drafts trust
+for whatever upstream released last: on 2026-11-20 the two keys that sign Netty's 5.0.0 alphas
+and a version-free regex scope on Helidon's key, drafted from 27.0.2. No build task downloads
+those files, and `recommendModuleVersions` reads only the graph, so no strict run checks them.
+A write is clean when every line it adds traces to that configuration and the cold runs pass;
+run the README's two writes from the committed policy, restoring the files between them.
 
 ## Quality gate & mutation ratchet
 
