@@ -1,5 +1,15 @@
 # Changelog
 
+## [25.4.5](https://github.com/sava-software/http-servers/compare/25.4.4...25.4.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** bump solanaBOMVersion to 25.30.62 for sava 25.13.4 and idl-clients-spl 25.20.0 ([374880d](https://github.com/sava-software/http-servers/commit/374880dbdac1aa70ba3e3bb5efbb47ebf9a75cd1))
+* **deps:** bump solanaBOMVersion to 25.30.63 for idl-clients-spl 25.20.1 ([35f74c5](https://github.com/sava-software/http-servers/commit/35f74c5f62c12b2f2aaa6a9a9995b3e1f4e562f3))
+* **deps:** bump solanaBOMVersion to 25.30.64 for bcprov-jdk18on 1.87 ([a4059f7](https://github.com/sava-software/http-servers/commit/a4059f77f9132ae9f468b0842c7ed47ca21f1fb5))
+* **deps:** bump solanaBOMVersion to 25.30.65 for Netty 4.2.21.Final ([d32e387](https://github.com/sava-software/http-servers/commit/d32e3870104007003493b629be211d47f37940de))
+
 ## [25.4.4](https://github.com/sava-software/http-servers/compare/25.4.3...25.4.4) (2026-11-10)
 
 
