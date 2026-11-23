@@ -22,9 +22,8 @@ AC1A3DD4471FE0F6EA28300F1BA25353622A192B ArcMutate signer, publisher identity un
 
 # Library signers that neither a publisher source nor gradle/gradle's policy authenticates.
 # A dependency bump under one of these moves the version after the release is checked
-# against the publisher. Four of the six BOM signers below (Jersey, EE4J, OCI, Coherence) enter
-# the graph only as POM imports of Helidon's dependency POM and move with Helidon; Infinispan's
-# and the testcontainers-bom signer's come through Jetty's parent POM and move with Jetty.
+# against the publisher. Jersey, EE4J, OCI, Coherence and Micrometer enter through
+# Helidon's dependency POM. Infinispan and testcontainers enter through Jetty's parent POM.
 F6A991654E702159FA9D613312D92BE9BC1771B4 Helidon Project <info@helidon.io>: no fingerprint published; the release workflow imports the key from a secret and names no id
 0B743A794876D3C78AB542A118D239B1CBCD2236 Eclipse Jersey <jersey-dev@eclipse.org>, signing subkey of 2EABB8F15F15E18885312232372703E4D5313120: no publisher source found (jersey-bom)
 AA70C7C433D501636392EC02153E7A3C2B4E5118 Eclipse EE4J Project <ee4j-dev@eclipse.org>, signing subkey of C3F530A8FDE7926E0F6C71475796E91EE6619C69: no publisher source found (org.eclipse.ee4j:project)
@@ -32,6 +31,7 @@ F5FEBA84EB26C56457B2CF819E31AB27445478DB Infinispan <infinispan-maven@infinispan
 6E7F910017655622A899639EE7D88DB8427DE651 Eddu Melendez's testcontainers-bom signer: not his GitHub-registered key, and gradle/gradle trusts another key for org.testcontainers
 6ED2B93D4C6575C4AB7E489059CF86E8D2B64647 Oracle ogho_mc_grp <ogho_mc_grp@oracle.com> (oci-java-sdk-bom): no publisher source found
 B30F9BE9DFC171F76F9160E55E3BA16420525DB2 Aleksandar Seovic's coherence-bom signer, a 2013 rsa2048 key (keys.openpgp.org carries its extension to 2027-09-25, keyserver.ubuntu.com's copy still shows it expired in 2022): no publisher source found
+48B086A7D843CFA258E83286928FBF39003C0425 Spring Builds (JAR Signing) <builds@springframework.org>: no publisher fingerprint found for Micrometer (micrometer-bom)
 
 # Keys that must not vouch for new releases: revoked keys, expired keys, DSA-1024 keys (about
 # 80 bits of security, whoever still signs with them) and retired release managers' keys that
