@@ -73,8 +73,8 @@ buildscript {
 }
 
 plugins {
-  id("software.sava.build") version "21.8.9"
-  id("software.sava.build.feature.jdk-provisioning") version "21.8.9"
+  id("software.sava.build") version "21.8.10"
+  id("software.sava.build.feature.jdk-provisioning") version "21.8.10"
 }
 
 if (providers.gradleProperty("dependencyAudit").isPresent) {
